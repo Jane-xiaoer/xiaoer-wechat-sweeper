@@ -232,7 +232,7 @@ USAGE = """
     --dest X    文件搬到哪里
     --months N  保留最近 N 个月不动（默认 3）
     --yes       跳过确认（agent 已代用户确认过才用）
-    --auto      定时任务模式：全自动 + 建提醒事项
+    --auto      定时任务模式：全自动 + 建提醒事项\n    --check-space  删完空间没释放时用：查 Time Machine 本地快照
 """
 
 
@@ -273,7 +273,10 @@ def harvest(months_rows, dest_root: Path, kind: str, apply: bool):
     y2, m2 = months_rows[-1][0], months_rows[-1][1]
     span = f"{y1}年{m1}月" if (y1, m1) == (y2, m2) else (
         f"{y1}年{m1}月-{m2}月" if y1 == y2 else f"{y1}年{m1}月-{y2}年{m2}月")
-    box = dest_root / f"微信{'视频' if kind == 'video' else '文件'}_{span}"
+    # 每次运行自成一批，绝不跟上次的混在一起：
+    #   上批用户没清完的、他决定留下的，都不该被新一批冲掉或搞混
+    batch = dest_root / f"⚠️ 待清理_{date.today():%Y%m%d}"
+    box = batch / f"微信{'视频' if kind == 'video' else '文件'}_{span}"
 
     n = sz = 0
     buckets = defaultdict(int)
@@ -312,6 +315,43 @@ def harvest(months_rows, dest_root: Path, kind: str, apply: bool):
     return n, sz
 
 
+
+def check_space():
+    """删完发现空间没释放？八成是 Time Machine 本地快照攥着不放。"""
+    print("\n\033[1m🔍 检查空间为什么没释放\033[0m\n")
+    r = subprocess.run(["df", "-h", "/System/Volumes/Data"],
+                       capture_output=True, text=True)
+    if r.returncode == 0 and len(r.stdout.splitlines()) > 1:
+        c = r.stdout.splitlines()[1].split()
+        print(f"  磁盘：已用 {c[2]}，可用 {c[3]}\n")
+
+    r = subprocess.run(["tmutil", "listlocalsnapshots", "/"],
+                       capture_output=True, text=True)
+    snaps = [l.strip() for l in r.stdout.splitlines() if "com.apple" in l]
+    if not snaps:
+        print("  ✅ 没有本地快照。空间如果还是没释放，检查一下废纸篓有没有清空。")
+        return
+
+    print(f"  🔴 发现 {len(snaps)} 个 Time Machine 本地快照\n")
+    for s_ in snaps:
+        print(f"     {s_}")
+    print(f"""
+  这些快照记着「删除之前」的磁盘状态，所以你删掉的文件在它们眼里还活着，
+  空间自然还不了你。实测有台机器上快照一个人锁了 620GB。
+
+  ⚠️ 删快照的唯一代价：失去「从本地快照恢复误删文件」这个后悔药。
+     外接硬盘上的 Time Machine 备份不受影响，系统之后也会自己重建新快照。
+
+  确认要删就逐条执行：""")
+    for s_ in snaps:
+        d = s_.replace("com.apple.TimeMachine.", "").replace(".local", "")
+        print(f"     tmutil deletelocalsnapshots {d}")
+    print("""
+  想根治（不再自动生成快照，前提是你没在用 Time Machine 定时备份）：
+     系统设置 → 通用 → 时间机器 → 关闭「自动备份」
+""")
+
+
 def main():
     if platform.system() != "Darwin":
         print("❌ 这个工具只适用于 macOS")
@@ -329,6 +369,10 @@ def main():
         dest = Path(sys.argv[sys.argv.index("--dest") + 1]).expanduser()
     if "--help" in sys.argv or "-h" in sys.argv:
         print(__doc__); print(USAGE); sys.exit(0)
+
+    if "--check-space" in sys.argv:       # 删完空间没释放？查这里
+        check_space()
+        sys.exit(0)
 
     if as_json:                           # JSON 模式先把扫描结果吐出来就结束
         emit_json(keep)
@@ -423,19 +467,40 @@ def main():
         tn += n
         ts += s
 
-    (dest / "_说明.txt").write_text(
-        f"""微信文件整理 —— {today}
+    keep_dir = dest / "✅ 我要留的"
+    keep_dir.mkdir(exist_ok=True)
+    (keep_dir / "_把想留的文件拖进来.txt").write_text(
+        "把你决定长期保留的文件从「⚠️ 待清理_日期」里拖到这个文件夹。\n"
+        "本工具永远不会碰这里的东西，以后每次整理也不会覆盖它。\n", encoding="utf-8")
 
-这些文件原本在微信的存储目录里，是你在聊天中收到的文件和视频。
-它们已被搬到这里，微信那边只剩最近 {keep} 个月的。
+    batch_dir = dest / f"⚠️ 待清理_{today:%Y%m%d}"
+    (batch_dir / "_怎么处理这批.txt").write_text(
+        f"""这批文件是 {today} 从微信里搬出来的（{keep} 个月前的）
 
-【安全说明】
-· 删掉这里的文件不会损坏聊天记录，聊天里的文字一条都不会少
-· 只是以后在微信里点这些文件会提示「已过期或已被清理」
-· 这些文件在微信服务器上通常也早就过期了，本来就点不开
+【怎么处理】
+1. 视频基本可以全删 —— 群里转发的东西，你多半不会再看
+2. 文档挑出想留的，拖进上一层的「✅ 我要留的」文件夹
+3. 剩下的连同这个「⚠️ 待清理_{today:%Y%m%d}」文件夹整个删掉
 
-【建议】
-视频基本可以直接删；文档挑要留的移走，其余删掉。
+【删掉会怎样】
+· 聊天记录的文字一条都不会少
+· 只是以后在微信里点那个文件，会提示「已过期或已被清理」
+· 这些文件在腾讯服务器上通常也早就过期，本来就点不开
+
+【🔴 删完发现空间没释放？这是最常见的困惑】
+macOS 的 Time Machine「本地快照」会攥着你删掉的文件不放。
+实测案例：删了 35GB 只回血 29GB，删了 17GB 只回血 5.7GB，
+有台机器上快照一个人锁了 620GB。
+
+查一下有没有快照：
+    tmutil listlocalsnapshots /
+
+有的话逐个删（不影响外接硬盘上的真备份，系统会自己重建）：
+    tmutil deletelocalsnapshots 2026-08-10-000457
+
+想彻底关掉自动快照（前提：你没在用 Time Machine 定时备份）：
+    系统设置 → 通用 → 时间机器 → 关闭自动备份
+    （命令行 `sudo tmutil disable` 需要「完全磁盘访问权限」，通常走界面更快）
 
 本次搬运：{tn} 个文件，{human(ts)}
 工具：微信存储清理器 v{VERSION}
