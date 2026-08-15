@@ -10,11 +10,27 @@
 		</data>
 		<key>Resources/Scripts/main.scpt</key>
 		<data>
-		gSErY4vhHPI/EokP0hhn8as84go=
+		iXJG0E1xdguEgFHzRyuwAgCIDVQ=
+		</data>
+		<key>Resources/app/dedup.py</key>
+		<data>
+		qnqgdH8b3Z1sqIoT6fkxs6pgzSo=
+		</data>
+		<key>Resources/app/panel.html</key>
+		<data>
+		g0IglB9kGnmxpvzAe1LZ48oSMQ4=
+		</data>
+		<key>Resources/app/panel.py</key>
+		<data>
+		FCKrYYpr/kY3FM+LlG09tN3dQzQ=
+		</data>
+		<key>Resources/app/wechat_cleaner.py</key>
+		<data>
+		46miK282MLb+mdEBHu4Gy3FFj2M=
 		</data>
 		<key>Resources/applet.icns</key>
 		<data>
-		L2oKhZqA3gdx1jqp8SwfstokG2A=
+		6IuZUzrikig8pvzkErKWVyjoBQ0=
 		</data>
 		<key>Resources/applet.rsrc</key>
 		<data>
@@ -38,22 +54,66 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			gSErY4vhHPI/EokP0hhn8as84go=
+			iXJG0E1xdguEgFHzRyuwAgCIDVQ=
 			</data>
 			<key>hash2</key>
 			<data>
-			eDuhtKmgODaRZk1oTqlRgEaKII9vnp55zj6+ZDiuKqs=
+			xuzgZDn9PavvP7YOSuYAqslDp10Fka9xrCvh/zZCb7E=
+			</data>
+		</dict>
+		<key>Resources/app/dedup.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			qnqgdH8b3Z1sqIoT6fkxs6pgzSo=
+			</data>
+			<key>hash2</key>
+			<data>
+			K/vaHHzawXS1dz+BwN1gv8eGS3lRNFe/YoDHZRbb2zc=
+			</data>
+		</dict>
+		<key>Resources/app/panel.html</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			g0IglB9kGnmxpvzAe1LZ48oSMQ4=
+			</data>
+			<key>hash2</key>
+			<data>
+			1GAux6TkJo6Hnh8Mr6Fe9NlKiS8vRgp3Hj7iGNC6a78=
+			</data>
+		</dict>
+		<key>Resources/app/panel.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			FCKrYYpr/kY3FM+LlG09tN3dQzQ=
+			</data>
+			<key>hash2</key>
+			<data>
+			WI3ah+jiecRV9MgYBzc1OcuqGvbbHXq5ojb7M4FA+aA=
+			</data>
+		</dict>
+		<key>Resources/app/wechat_cleaner.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			46miK282MLb+mdEBHu4Gy3FFj2M=
+			</data>
+			<key>hash2</key>
+			<data>
+			FUiiP3gmfO8MdM4jKPJ/C4h1YDYGkKje29N1cAkndYQ=
 			</data>
 		</dict>
 		<key>Resources/applet.icns</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			L2oKhZqA3gdx1jqp8SwfstokG2A=
+			6IuZUzrikig8pvzkErKWVyjoBQ0=
 			</data>
 			<key>hash2</key>
 			<data>
-			9CRIbo6VCCvt0R7E6LaNHBcPheqCRuZttc9PxgrdIxs=
+			sRayIM+1qH3zlKs4F1p/tGzgLJnU2EeXBadSKj1e0m8=
 			</data>
 		</dict>
 		<key>Resources/applet.rsrc</key>
