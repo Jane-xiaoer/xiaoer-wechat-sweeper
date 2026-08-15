@@ -4,10 +4,6 @@
 <dict>
 	<key>files</key>
 	<dict>
-		<key>Resources/Assets.car</key>
-		<data>
-		uBhe0XjnXBA4XMTS5u4qKsmyZM4=
-		</data>
 		<key>Resources/Scripts/main.scpt</key>
 		<data>
 		iXJG0E1xdguEgFHzRyuwAgCIDVQ=
@@ -39,17 +35,6 @@
 	</dict>
 	<key>files2</key>
 	<dict>
-		<key>Resources/Assets.car</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			uBhe0XjnXBA4XMTS5u4qKsmyZM4=
-			</data>
-			<key>hash2</key>
-			<data>
-			S/k6TV+XN+bgfA6DzUHnZAsF7xUhwE8Ag9JpyS1R9wo=
-			</data>
-		</dict>
 		<key>Resources/Scripts/main.scpt</key>
 		<dict>
 			<key>hash</key>

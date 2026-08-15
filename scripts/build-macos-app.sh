@@ -28,14 +28,17 @@ mkdir -p "$APP/Contents/Resources/app"
 cp "$ROOT/panel.html" "$ROOT/panel.py" "$ROOT/wechat_cleaner.py" "$ROOT/dedup.py" \
    "$APP/Contents/Resources/app/"
 cp "$TMP/applet.icns" "$APP/Contents/Resources/applet.icns"
+rm -f "$APP/Contents/Resources/Assets.car"
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleName 小耳微信清扫器" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile applet.icns" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$APP/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string xyz.xiaoerai.wechat-cleaner" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier xyz.xiaoerai.wechat-cleaner" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 2.1.1" "$APP/Contents/Info.plist" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 2.1.1" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 2.1.1" "$APP/Contents/Info.plist" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 2.1.1" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 2.1.2" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 2.1.2" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 2.1.2" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 2.1.2" "$APP/Contents/Info.plist"
 
 codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"

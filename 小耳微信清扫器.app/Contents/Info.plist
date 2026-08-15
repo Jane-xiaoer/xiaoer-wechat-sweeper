@@ -9,9 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>applet</string>
 	<key>CFBundleIconFile</key>
-	<string>applet</string>
-	<key>CFBundleIconName</key>
-	<string>applet</string>
+	<string>applet.icns</string>
 	<key>CFBundleIdentifier</key>
 	<string>xyz.xiaoerai.wechat-cleaner</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -21,11 +19,11 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.1.1</string>
+	<string>2.1.2</string>
 	<key>CFBundleSignature</key>
 	<string>aplt</string>
 	<key>CFBundleVersion</key>
-	<string>2.1.1</string>
+	<string>2.1.2</string>
 	<key>LSMinimumSystemVersionByArchitecture</key>
 	<dict>
 		<key>x86_64</key>
