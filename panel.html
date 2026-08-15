@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>👂 小耳微信清扫器</title>
+<style>
+:root{
+  --field:#2A2A28; --paper:#EFE8D8; --ink:#26221C; --ink2:#6E675C;
+  --blue:#37517B; --gold:#C1913F; --red:#AE4B32; --txt:#EFE8D8;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--field);color:var(--txt);display:flex;flex-direction:column;
+  font-family:"PingFang SC","Hiragino Sans GB",system-ui,sans-serif;overflow:hidden;
+  background-image:radial-gradient(ellipse 130% 80% at 50% 0%,#35322F,transparent 64%)}
+
+/* 顶：品牌 + 步骤指示 */
+.top{display:flex;align-items:center;gap:10px;padding:20px 30px 0;flex:none}
+.top .e{font-size:22px}
+.top .n{font-size:15px;font-weight:800;letter-spacing:2.5px}
+.top .dots{margin-left:auto;display:flex;gap:7px}
+.top .dots i{width:8px;height:8px;background:rgba(239,232,216,.24);border-radius:50%;
+  transition:all .3s}
+.top .dots i.on{background:var(--gold);width:22px;border-radius:4px}
+.top .dots i.done{background:rgba(239,232,216,.5)}
+
+/* 中：每屏一件事，垂直居中 */
+main{flex:1;display:flex;align-items:center;justify-content:center;padding:14px 30px;
+  overflow-y:auto}
+.step{display:none;width:100%;max-width:620px;text-align:center;
+  animation:in .32s cubic-bezier(.2,.7,.3,1)}
+.step.on{display:block}
+@keyframes in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+.kicker{font-size:14px;letter-spacing:3px;color:var(--gold);font-weight:700;margin-bottom:14px}
+h2{font-size:33px;font-weight:900;line-height:1.32;letter-spacing:-.6px;margin-bottom:14px}
+h2 em{font-style:normal;background:var(--blue);color:var(--paper);padding:0 10px 3px;
+  display:inline-block;transform:rotate(-.8deg)}
+.desc{font-size:16px;line-height:1.75;color:rgba(239,232,216,.68);margin-bottom:26px}
+.desc b{color:var(--gold)}
+
+/* 大数字 */
+.huge{font-size:82px;font-weight:900;line-height:1;color:var(--paper);
+  background:var(--red);display:inline-block;padding:8px 26px 16px;margin:6px 0 18px;
+  transform:rotate(-1deg);box-shadow:0 4px 4px rgba(0,0,0,.32),0 20px 34px rgba(0,0,0,.4)}
+.huge s{text-decoration:none;font-size:34px}
+
+/* 月份条 */
+.months{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:24px}
+.months .m{font-size:12.5px;padding:6px 11px;background:rgba(239,232,216,.1);
+  color:rgba(239,232,216,.8);font-variant-numeric:tabular-nums}
+.months .m.exp{background:var(--red);color:var(--paper);font-weight:700}
+
+/* 卡片 */
+.box{background:var(--paper);color:var(--ink);padding:24px 26px;text-align:left;
+  box-shadow:0 3px 3px rgba(0,0,0,.26),0 16px 30px rgba(0,0,0,.34);margin-bottom:22px;
+  clip-path:polygon(0 .8%,26% 0,54% 1%,80% 0,100% .9%,99.5% 30%,100% 62%,99.4% 99.1%,
+    72% 100%,46% 99%,20% 100%,.4% 99.2%,.6% 66%,0 34%)}
+.split{display:flex;gap:12px;margin-bottom:22px}
+.split .c{flex:1;background:rgba(239,232,216,.09);padding:16px 12px}
+.split .c.hot{background:var(--red)}
+.split .c.keep{background:var(--gold);color:#2A2418}
+.split .v{font-size:27px;font-weight:900;line-height:1}
+.split .k{font-size:12px;margin-top:6px;opacity:.8}
+
+/* 控件 */
+.slider{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+input[type=range]{flex:1;accent-color:var(--blue);height:6px}
+.pill{background:var(--blue);color:var(--paper);padding:7px 15px;font-weight:800;
+  min-width:88px;text-align:center;font-size:15px}
+.note{font-size:13.5px;color:var(--ink2);line-height:1.6}
+.path{background:#E6DFCC;padding:14px 16px;font-size:13.5px;word-break:break-all;
+  font-family:ui-monospace,Menlo,monospace;margin-bottom:14px;min-height:48px}
+.chk{display:flex;align-items:flex-start;gap:9px;font-size:14px;cursor:pointer;
+  line-height:1.55;color:var(--ink2)}
+.chk input{width:17px;height:17px;accent-color:var(--blue);flex:none;margin-top:2px}
+
+/* 按钮 */
+button{font:inherit;border:none;cursor:pointer;font-weight:800;transition:transform .1s}
+button:active{transform:translateY(1px)}
+.primary{background:var(--red);color:var(--paper);padding:17px 44px;font-size:19px;
+  letter-spacing:1px;box-shadow:0 3px 3px rgba(0,0,0,.3),0 12px 22px rgba(0,0,0,.34)}
+.primary:disabled{background:#6C665C;cursor:not-allowed;box-shadow:none}
+.ghost{background:rgba(239,232,216,.14);color:var(--txt);padding:15px 26px;font-size:15px}
+.ghost.dark{background:#D8D0BC;color:var(--ink)}
+.btns{display:flex;gap:12px;justify-content:center;align-items:center}
+
+/* 进度 */
+.prog{text-align:left;max-width:460px;margin:0 auto}
+.pstep{display:flex;align-items:center;gap:14px;padding:13px 0;font-size:16px;
+  opacity:.34;transition:opacity .35s}
+.pstep.on{opacity:1;font-weight:800}
+.pstep.done{opacity:.72}
+.pstep .d{width:28px;height:28px;flex:none;display:grid;place-items:center;font-size:13px;
+  background:rgba(239,232,216,.16);border-radius:50%}
+.pstep.on .d{background:var(--gold);color:#2A2418}
+.pstep.done .d{background:var(--blue);color:var(--paper)}
+.pstep .s{margin-left:auto;font-size:12.5px;font-weight:400;opacity:.7}
+
+/* 结果 */
+.cats{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+.cats span{background:#E6DFCC;padding:6px 12px;font-size:13px;font-weight:700}
+.warn{background:var(--red);color:var(--paper);padding:15px 18px;font-size:13px;
+  line-height:1.65;text-align:left;margin-top:14px}
+.warn code{background:rgba(0,0,0,.3);padding:2px 6px;font-size:12px}
+.foot{flex:none;text-align:center;font-size:11.5px;color:rgba(239,232,216,.4);
+  padding:12px 30px 18px}
+.spin{display:inline-block;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="e">👂</span><span class="n">小耳微信清扫器</span>
+  <div class="dots"><i id="d1"></i><i id="d2"></i><i id="d3"></i><i id="d4"></i><i id="d5"></i></div>
+</div>
+
+<main>
+  <!-- ① 监控 -->
+  <section class="step on" id="p1">
+    <div class="kicker" id="lastrun">正在看你的微信…</div>
+    <h2>微信在你电脑上占了</h2>
+    <div class="huge" id="total"><span class="spin">◐</span></div>
+    <div class="months" id="months"></div>
+    <div class="desc">各个群里发的文件，微信默默存在这里，<b>你根本找不到在哪</b>。<br>
+      清不清理，你说了算。</div>
+    <button class="primary" onclick="go(2)">🧹 开始清理</button>
+  </section>
+
+  <!-- ② 保留多久 -->
+  <section class="step" id="p2">
+    <div class="kicker">第 1 步 / 共 2 步</div>
+    <h2>最近的文件，<em>要留着吗</em></h2>
+    <div class="desc">留着的那些，在微信里还能正常点开。<br>
+      更早的才搬出来 —— 那些你基本不会再回微信里找。</div>
+    <div class="box">
+      <div class="slider">
+        <input type="range" id="keep" min="0" max="12" value="1">
+        <span class="pill" id="keepv">留 1 个月</span>
+      </div>
+      <div class="note" id="tradeoff"></div>
+    </div>
+    <div class="split">
+      <div class="c hot"><div class="v" id="mv">—</div><div class="k">这次搬走</div></div>
+      <div class="c keep"><div class="v" id="kv">—</div><div class="k">留在微信不动</div></div>
+    </div>
+    <div class="btns"><button class="ghost" onclick="go(1)">← 返回</button>
+      <button class="primary" onclick="go(3)">下一步 →</button></div>
+  </section>
+
+  <!-- ③ 选文件夹 -->
+  <section class="step" id="p3">
+    <div class="kicker">第 2 步 / 共 2 步</div>
+    <h2>搬到<em>哪个文件夹</em></h2>
+    <div class="desc">建议放桌面，方便你之后挑拣。<br>以后每次清扫都会放进这里，不会另起炉灶。</div>
+    <div class="box">
+      <div class="path" id="dest">…</div>
+      <button class="ghost dark" onclick="pick()" style="width:100%;margin-bottom:16px">
+        📁 换一个文件夹…</button>
+      <label class="chk"><input type="checkbox" id="dd" checked>
+        <span><b style="color:#26221C">先查重</b> —— 很多文件你电脑上早就有了（自己发出去的、
+        自己收藏的），以及同一份被好几个群转发、重复下载了好几次</span></label>
+    </div>
+    <div class="btns"><button class="ghost" onclick="go(2)">← 返回</button>
+      <button class="primary" id="gobtn" onclick="run()">开始清扫 →</button></div>
+  </section>
+
+  <!-- ④ 进度 -->
+  <section class="step" id="p4">
+    <div class="kicker">处理中，别关窗口</div>
+    <h2 id="ptitle">正在清扫…</h2>
+    <div class="prog">
+      <div class="pstep" id="q1"><span class="d">1</span>查你电脑里已经有哪些<span class="s"></span></div>
+      <div class="pstep" id="q2"><span class="d">2</span>筛掉重复的文件<span class="s"></span></div>
+      <div class="pstep" id="q3"><span class="d">3</span>搬运并分好类<span class="s"></span></div>
+      <div class="pstep" id="q4"><span class="d">4</span>完成<span class="s"></span></div>
+    </div>
+  </section>
+
+  <!-- ⑤ 结果 -->
+  <section class="step" id="p5">
+    <div class="kicker">搬好了</div>
+    <h2 id="rtitle">已经放进文件夹了</h2>
+    <div class="desc" id="rdesc"></div>
+    <div class="box" id="rbox"></div>
+    <div id="rwarn"></div>
+    <div class="btns"><button class="ghost" onclick="location.reload()">再扫一次</button>
+      <button class="primary" onclick="openDest()">📂 去看文件夹</button></div>
+  </section>
+</main>
+
+<div class="foot">只在你电脑本地运行，不联网　·　github.com/Jane-xiaoer/wechat-cleaner</div>
+
+<script>
+let DEST="", SCAN=null, CUR=1;
+const $=id=>document.getElementById(id);
+
+function go(n){
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('on'));
+  $('p'+n).classList.add('on'); CUR=n;
+  for(let i=1;i<=5;i++){
+    const d=$('d'+i); d.className = i<n?'done':(i===n?'on':'');
+  }
+  if(n===2) scan();
+}
+
+async function scan(){
+  const keep=$('keep').value;
+  const r=await(await fetch('/api/scan?keep='+keep)).json();
+  if(!r.ok){ $('total').innerHTML='<span style="font-size:26px">'+r.error+'</span>'; return; }
+  SCAN=r;
+  if(!DEST){ DEST=r.suggest; $('dest').textContent=DEST; }
+  $('lastrun').textContent = r.last ? `上次清扫 ${r.last} · 累计 ${r.total_runs} 次` : '还没清扫过';
+  $('total').innerHTML = r.total.replace(/([A-Z]+)$/,'<s>$1</s>');
+  $('mv').innerHTML = r.expired.replace(/([A-Z]+)$/,'<s style="font-size:15px">$1</s>');
+  $('kv').innerHTML = r.kept.replace(/([A-Z]+)$/,'<s style="font-size:15px">$1</s>');
+  $('tradeoff').innerHTML = keep==0
+    ? '微信里一个文件都不留 —— 清得最干净，但那些文件在微信里也点不开了。'
+    : `留最近 <b>${keep}</b> 个月不动，它们在微信里还能正常点开；更早的搬走。`;
+  let mh='';
+  for(const [kind,d] of Object.entries(r.kinds))
+    for(const m of d.months)
+      mh += `<span class="m ${m.expired?'exp':''}">${kind==='video'?'🎬':'📄'} ${m.m} · ${m.human}</span>`;
+  $('months').innerHTML = mh;
+}
+
+$('keep').oninput = e=>{
+  const v=+e.target.value;
+  $('keepv').textContent = v===0?'一个不留':'留 '+v+' 个月';
+  clearTimeout(window._t); window._t=setTimeout(scan,180);
+};
+
+async function pick(){
+  const r=await(await fetch('/api/pick')).json();
+  if(r.path){ DEST=r.path; $('dest').textContent=DEST; }
+}
+
+async function run(){
+  if(!SCAN||SCAN.expired_bytes===0){
+    alert('这次没有到期的文件可搬。\n\n回上一步，把滑块往左拖（比如拖到「一个不留」），就会有了。');
+    return; }
+  if(!confirm('确认开始吗？\n\n文件会从微信移动到：\n'+DEST+'\n\n只移动，不会删除任何东西。')) return;
+  go(4);
+  await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({keep:+$('keep').value,dest:DEST,dedup:$('dd').checked})});
+  poll();
+}
+
+function mark(stage,detail){
+  for(let i=1;i<=4;i++){
+    const el=$('q'+i);
+    el.className='pstep'+(i<stage?' done':(i===stage?' on':''));
+    if(i===stage&&detail) el.querySelector('.s').textContent=detail;
+  }
+}
+
+async function poll(){
+  const s=await(await fetch('/api/status')).json();
+  if(s.stage) mark(s.stage,s.detail);
+  if(s.running){ setTimeout(poll,600); return; }
+  mark(4,'');
+  if(s.result&&s.result.n) show(s.result);
+  else { $('ptitle').textContent = s.detail||'没有可搬的文件';
+         setTimeout(()=>go(1),1600); }
+}
+
+async function show(res){
+  $('rtitle').innerHTML = `搬好了 <em>${res.n} 个文件</em>`;
+  $('rdesc').innerHTML = `共 <b>${res.size}</b>，文件夹已经自动打开。<br>
+    <b>现在轮到你了</b>：视频基本可以全删，文档挑几个想留的，其余删掉。`;
+  let h = `<div style="font-weight:800;margin-bottom:10px">分好的类别</div><div class="cats">`;
+  (res.buckets||[]).forEach(b=>h+=`<span>${b[0]} ${b[1]}</span>`);
+  h += `</div>`;
+  if(res.misc) h += `<div class="note" style="margin-top:16px">
+    📎 有 <b style="color:#AE4B32">${res.misc} 个文件分不出类别</b>，都在「杂项 / 其他文档」里 ——
+    这类通常文件名没规律。<b style="color:#26221C">请你自己去看一眼，删掉价值不高的，留下想要的。</b></div>`;
+  if(res.dups) h += `<div class="note" style="margin-top:10px">
+    🔁 另有 <b>${res.dups} 个是重复的</b>（你电脑上已有 / 几个群重复发的），
+    单独放在「_重复_电脑里已有」，<b>没有删除</b>，你确认后自己清。</div>`;
+  h += `<div class="note" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(0,0,0,.1)">
+    删掉<b style="color:#26221C">不影响聊天记录</b>，只是以后在微信里点那个文件会提示
+    「已过期或已被清理」。以后再清扫，还是放进这些文件夹里，<b style="color:#26221C">按时间排序</b>
+    就知道哪些是老的、该清了。</div>`;
+  $('rbox').innerHTML = h;
+
+  const sn=await(await fetch('/api/snapshots')).json();
+  if(sn.snapshots&&sn.snapshots.length){
+    let w=`<div class="warn">⚠️ <b>你这台机器有 ${sn.snapshots.length} 个 Time Machine 本地快照</b>，
+      它们攥着已删文件不放 —— <b>你删完可能会发现空间没释放</b>。想释放就在终端逐条跑：<br>`;
+    sn.snapshots.forEach(x=>w+=`<code>tmutil deletelocalsnapshots ${x}</code><br>`);
+    $('rwarn').innerHTML = w+`</div>`;
+  }
+  go(5);
+}
+
+function openDest(){ fetch('/api/open?p='+encodeURIComponent(DEST)); }
+
+go(1); scan();
+</script>
+</body>
+</html>

@@ -54,7 +54,7 @@ python3 wechat_cleaner.py --json
 ### 第 2 步：问用户两件事
 
 1. **搬到哪里？** 建议用 `suggested_dest`，但要让用户确认或改。
-2. **保留最近几个月？** 默认 3。想更保守就 6，想更狠就 1。
+2. **保留最近几个月？** 默认 1。想更保守就 6，想更狠就 1。
 
 **不要替用户决定这两件事。** 位置错了他会找不到，窗口错了可能搬走他还要用的。
 
@@ -72,7 +72,7 @@ python3 wechat_cleaner.py --json
 ### 第 3 步：执行
 
 ```bash
-python3 wechat_cleaner.py --dest "/Users/xxx/Desktop/微信文件整理" --months 3 --yes
+python3 wechat_cleaner.py --dest "/Users/xxx/Desktop/微信文件整理" --months 1 --yes
 ```
 
 `--yes` 表示"你已代用户确认过"。**没有真的问过用户就不要加这个参数。**

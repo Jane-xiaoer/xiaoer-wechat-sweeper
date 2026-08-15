@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🧹 微信存储清理器 for macOS
+👂 小耳微信清扫器 for macOS
 
-微信会把聊天里收到的文件和视频永久存在电脑上，按月堆积、从不回收。
-这个工具帮你把「够老的」那些挪出来、分好类，你自己决定删哪些。
+各个群里发的文件，微信默默存在你电脑上，你根本找不到在哪。
+
+小耳微信清扫器帮你翻出来 —— 电脑里已有的、自己重复的，先剔掉；剩下的分好类。
+
+你花五分钟挑一遍：有用的留下，没用的删掉。资料沉淀了，内存也清了。
 
 特点：
   · 零依赖，只用 Python 标准库（macOS 自带 python3 就能跑）
@@ -40,18 +43,69 @@ WECHAT_ROOTS = [
     "Library/Application Support/com.tencent.xinWeChat",
 ]
 
-# ── 按文件类型分类（通用，不涉及个人兴趣）──────────────────
+# ── 分类：一级按「是什么文件」，文档再按「是什么文档」细分 ──────
+# 刻意不按主题（Claude / 出海 / 提示词…）分 —— 那是每个人自己的兴趣地图，
+# 别人打开只会看到一堆空文件夹。想要主题分类的，走 我的分类.txt（见下）。
 CATEGORIES = [
-    ("📄 文档",   {".pdf", ".doc", ".docx", ".pages", ".rtf", ".txt", ".md", ".epub"}),
-    ("📊 表格",   {".xls", ".xlsx", ".csv", ".numbers"}),
-    ("📽 演示",   {".ppt", ".pptx", ".key"}),
-    ("🖼 图片",   {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".bmp", ".tiff", ".svg"}),
     ("🎬 视频",   {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv", ".m4v", ".webm", ".rmvb"}),
+    ("🖼 图片",   {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".bmp", ".tiff", ".svg"}),
     ("🎵 音频",   {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".amr"}),
     ("📦 压缩包", {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"}),
     ("💾 安装包", {".dmg", ".pkg", ".exe", ".msi", ".apk", ".ipa", ".deb"}),
-    ("💻 代码",   {".py", ".js", ".ts", ".java", ".c", ".cpp", ".go", ".rs", ".sh", ".html", ".css", ".json", ".xml"}),
+    ("💻 代码",   {".py", ".js", ".ts", ".java", ".c", ".cpp", ".go", ".rs", ".sh",
+                  ".html", ".css", ".json", ".xml"}),
+    ("📄 文档",   {".pdf", ".doc", ".docx", ".pages", ".rtf", ".txt", ".md", ".epub",
+                  ".mobi", ".ppt", ".pptx", ".key", ".xls", ".xlsx", ".csv", ".numbers"}),
 ]
+
+# 文档的二级分类。关键词要够长够具体 —— 用「年报」会误伤「哪年报、怎么报」，
+# 这是实测踩过的坑。
+DOC_SUBCATS = [
+    ("💼 简历",        ["简历", "履历", "resume", "curriculum vitae"]),
+    ("📋 合同与表单",  ["合同", "协议", "申请表", "审批", "报销", "发票", "凭证",
+                       "登记表", "承诺书", "授权书", "意见书", "回执"]),
+    ("🎓 课件与教程",  ["课件", "讲义", "教程", "培训", "手册", "指南", "入门",
+                       "实战", "课程", "教材", "workshop", "tutorial"]),
+    ("📚 书籍",        ["《", "读书笔记", "书单", "全文", "译本", "epub", "mobi",
+                       "pdfdrive", "z-lib"]),
+    ("📊 报告与白皮书", ["报告", "白皮书", "蓝皮书", "研究", "洞察", "调研",
+                       "趋势", "展望", "年鉴", "指数", "report", "whitepaper"]),
+]
+
+CUSTOM_FILE = "我的分类.txt"
+CUSTOM_TEMPLATE = """# 想按自己关心的话题分类？在这里写，一行一个。
+# 格式：  分类名 = 关键词1, 关键词2, 关键词3
+# 文件名里出现任一关键词就归到该分类，比下面的通用分类优先。
+# 以 # 开头的是注释。删掉本行下面的示例即可停用。
+#
+# AI工具 = claude, cursor, copilot, prompt, 提示词
+# 出海 = 出海, 跨境, 海外, 外贸
+# 我的行业 = 半导体, 芯片, 晶圆
+"""
+
+
+def load_custom_rules(folder: Path):
+    """读目标文件夹里的 我的分类.txt。没有就现场生成一份带注释的模板。"""
+    f = folder / CUSTOM_FILE
+    if not f.exists():
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            f.write_text(CUSTOM_TEMPLATE, encoding="utf-8")
+        except OSError:
+            pass
+        return []
+    rules = []
+    for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        cat, kws = line.split("=", 1)
+        kw = [k.strip().lower() for k in kws.split(",") if k.strip()]
+        if cat.strip() and kw:
+            rules.append((cat.strip(), kw))
+    return rules
+
+
 MONTH_DIR = re.compile(r"^(\d{4})-(\d{1,2})$")
 
 
@@ -142,12 +196,25 @@ def scan_months(msg: Path):
 
 
 # ═══════════════ 2. 分类 ═══════════════
-def category_of(name: str) -> str:
+def doc_subcat(name: str) -> str:
+    low = name.lower()
+    for label, kws in DOC_SUBCATS:
+        if any(k in name or k in low for k in kws):
+            return label
+    return "📎 其他文档"
+
+
+def category_of(name: str, custom=None) -> str:
+    """自定义规则优先（用户特意配的），然后按文件形态，文档再分二级"""
+    low = name.lower()
+    for cat, kws in (custom or []):
+        if any(k in low for k in kws):
+            return cat
     ext = Path(name).suffix.lower()
     for label, exts in CATEGORIES:
         if ext in exts:
-            return label
-    return "📎 其他"
+            return f"📄 文档/{doc_subcat(name)}" if label == "📄 文档" else label
+    return "📎 杂项"
 
 
 # ═══════════════ 3. 定时任务 ═══════════════
@@ -177,7 +244,7 @@ PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def install_schedule(every_months: int, keep: int, dest: Path) -> bool:
-    label = "com.xiaoer.wechat-cleaner"
+    label = "com.xiaoer.wechat-sweeper"
     script = Path(__file__).resolve()
     plist_path = Path.home() / f"Library/LaunchAgents/{label}.plist"
     plist_path.parent.mkdir(parents=True, exist_ok=True)
@@ -270,28 +337,23 @@ def emit_json(keep: int):
 
 
 # ═══════════════ 主流程 ═══════════════
-def harvest(months_rows, dest_root: Path, kind: str, apply: bool, dup_map=None):
-    """把选中的月份搬进 dest_root，按类型分好。
-    dup_map 里的文件不参与分类，单独归到 _重复_电脑里已有/ 供用户过目。"""
-    dup_map = dup_map or {}
-    if not months_rows:
-        return 0, 0
-    y1, m1 = months_rows[0][0], months_rows[0][1]
-    y2, m2 = months_rows[-1][0], months_rows[-1][1]
-    span = f"{y1}年{m1}月" if (y1, m1) == (y2, m2) else (
-        f"{y1}年{m1}月-{m2}月" if y1 == y2 else f"{y1}年{m1}月-{y2}年{m2}月")
-    # 每次运行自成一批，绝不跟上次的混在一起：
-    #   上批用户没清完的、他决定留下的，都不该被新一批冲掉或搞混
-    batch = dest_root / f"⚠️ 待清理_{date.today():%Y%m%d}"
-    box = batch / f"微信{'视频' if kind == 'video' else '文件'}_{span}"
+def harvest(months_rows, dest_root: Path, kind: str, apply: bool,
+            dup_map=None, custom=None):
+    """搬进 dest_root 的固定分类夹。
 
+    刻意不按批次分文件夹：第二次搬的直接并进同一套分类夹，靠文件自带的
+    修改时间（= 你当初在群里收到它的时间）排序区分新旧。否则三次不整理
+    就会躺着三个文件夹，越攒越乱。
+    """
+    dup_map = dup_map or {}
     n = sz = 0
     buckets = defaultdict(int)
     for _y, _m, src, _s, _c in months_rows:
         for f in list(src.rglob("*")):
             if not f.is_file() or f.name == ".DS_Store":
                 continue
-            cat = ("_重复_电脑里已有" if f in dup_map else category_of(f.name))
+            cat = ("_重复_电脑里已有" if f in dup_map
+                   else category_of(f.name, custom))
             buckets[cat] += 1
             n += 1
             try:
@@ -300,15 +362,15 @@ def harvest(months_rows, dest_root: Path, kind: str, apply: bool, dup_map=None):
                 pass
             if not apply:
                 continue
-            d = box / cat
+            d = dest_root / cat
             d.mkdir(parents=True, exist_ok=True)
             t = d / f.name
             i = 1
             while t.exists():
-                t = d / f"{f.stem}_{i}{f.suffix}"
+                t = d / f"{f.stem}_{i}{f.suffix}"      # 不覆盖，重名就加序号
                 i += 1
             try:
-                shutil.move(str(f), str(t))
+                shutil.move(str(f), str(t))            # move 会保留原始时间
             except Exception as e:
                 print(f"    ⚠️ {f.name[:40]}: {e}")
 
@@ -316,47 +378,36 @@ def harvest(months_rows, dest_root: Path, kind: str, apply: bool, dup_map=None):
         for _y, _m, src, _s, _c in months_rows:
             shutil.rmtree(src, ignore_errors=True)
 
-    print(f"\n  {'✅ 已搬到' if apply else '将搬到'} {box.name}/")
+    print(f"\n  {'✅ 已搬运' if apply else '将搬运'} "
+          f"{'视频' if kind == 'video' else '文件'}：")
     for c in sorted(buckets, key=lambda x: -buckets[x]):
         print(f"      {c}  {buckets[c]} 个")
     return n, sz
 
 
+RECORD = ".清扫记录.json"
 
-def check_space():
-    """删完发现空间没释放？八成是 Time Machine 本地快照攥着不放。"""
-    print("\n\033[1m🔍 检查空间为什么没释放\033[0m\n")
-    r = subprocess.run(["df", "-h", "/System/Volumes/Data"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and len(r.stdout.splitlines()) > 1:
-        c = r.stdout.splitlines()[1].split()
-        print(f"  磁盘：已用 {c[2]}，可用 {c[3]}\n")
 
-    r = subprocess.run(["tmutil", "listlocalsnapshots", "/"],
-                       capture_output=True, text=True)
-    snaps = [l.strip() for l in r.stdout.splitlines() if "com.apple" in l]
-    if not snaps:
-        print("  ✅ 没有本地快照。空间如果还是没释放，检查一下废纸篓有没有清空。")
-        return
+def read_record(folder: Path):
+    f = folder / RECORD
+    if not f.exists():
+        return {"runs": []}
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {"runs": []}
 
-    print(f"  🔴 发现 {len(snaps)} 个 Time Machine 本地快照\n")
-    for s_ in snaps:
-        print(f"     {s_}")
-    print(f"""
-  这些快照记着「删除之前」的磁盘状态，所以你删掉的文件在它们眼里还活着，
-  空间自然还不了你。实测有台机器上快照一个人锁了 620GB。
 
-  ⚠️ 删快照的唯一代价：失去「从本地快照恢复误删文件」这个后悔药。
-     外接硬盘上的 Time Machine 备份不受影响，系统之后也会自己重建新快照。
-
-  确认要删就逐条执行：""")
-    for s_ in snaps:
-        d = s_.replace("com.apple.TimeMachine.", "").replace(".local", "")
-        print(f"     tmutil deletelocalsnapshots {d}")
-    print("""
-  想根治（不再自动生成快照，前提是你没在用 Time Machine 定时备份）：
-     系统设置 → 通用 → 时间机器 → 关闭「自动备份」
-""")
+def write_record(folder: Path, n: int, size: int, keep: int, dups: int):
+    rec = read_record(folder)
+    rec["runs"].append({"date": str(date.today()), "files": n, "bytes": size,
+                        "keep_months": keep, "dups": dups})
+    rec["last"] = str(date.today())
+    try:
+        (folder / RECORD).write_text(
+            json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def main():
@@ -368,7 +419,7 @@ def main():
     scan_only = "--scan" in sys.argv     # 只扫描，不动任何文件
     as_json = "--json" in sys.argv       # 结构化输出，给 AI agent 解析
     assume_yes = "--yes" in sys.argv     # 跳过确认，agent 已代用户确认过
-    keep = 3
+    keep = 1
     dest = None
     if "--months" in sys.argv:
         keep = int(sys.argv[sys.argv.index("--months") + 1])
@@ -385,7 +436,7 @@ def main():
         emit_json(keep)
         sys.exit(0)
 
-    print(f"\n\033[1m🧹 微信存储清理器 v{VERSION}\033[0m")
+    print(f"\n\033[1m👂 小耳微信清扫器 v{VERSION}\033[0m")
     print("   只移动，绝不删除。删不删由你决定。\n")
 
     # ① 找微信
@@ -451,6 +502,8 @@ def main():
         else:
             dest = default_dest
 
+    custom = load_custom_rules(dest)
+
     # ⑤ 去重：很多文件你电脑上早就有了（自己发出去的、自己收藏的）
     dup_map = {}
     if _dedup and not ("--no-dedup" in sys.argv):
@@ -487,7 +540,7 @@ def main():
     title("预演 —— 下面这些会被搬走（现在还没动）")
     pn = ps = 0
     for kind, rows in picked.items():
-        n, s = harvest(rows, dest, kind, apply=False, dup_map=dup_map)
+        n, s = harvest(rows, dest, kind, apply=False, dup_map=dup_map, custom=custom)
         pn += n
         ps += s
     print(f"\n  合计 {pn} 个文件，{human(ps)}")
@@ -502,7 +555,7 @@ def main():
     dest.mkdir(parents=True, exist_ok=True)
     tn = ts = 0
     for kind, rows in picked.items():
-        n, s = harvest(rows, dest, kind, apply=True, dup_map=dup_map)
+        n, s = harvest(rows, dest, kind, apply=True, dup_map=dup_map, custom=custom)
         tn += n
         ts += s
 
@@ -542,7 +595,7 @@ macOS 的 Time Machine「本地快照」会攥着你删掉的文件不放。
     （命令行 `sudo tmutil disable` 需要「完全磁盘访问权限」，通常走界面更快）
 
 本次搬运：{tn} 个文件，{human(ts)}
-工具：微信存储清理器 v{VERSION}
+工具：小耳微信清扫器 v{VERSION}
 """, encoding="utf-8")
 
     print(f"\n✅ 完成：{tn} 个文件，{human(ts)}")
