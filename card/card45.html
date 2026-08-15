@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>👂 微信存储清理器 · 使用卡片</title>
+<style>
+/* ────────────────────────────────────────────────────────────
+   材质：paper-collage-cardstock 的实拍卡纸资产（非 CSS 仿纸）
+   配色：t15 艺术史海报 —— 炭黑 + 米白 + 藏蓝/芥黄/砖红
+   🔴 铁律：改颜色只动 background-color，严禁写 background: 简写
+           （简写会把 multiply 的纹理层整个冲掉）
+   ──────────────────────────────────────────────────────────── */
+:root{
+  --field:#2A2A28; --field-deep:#1C1C1A; --paper:#EFE8D8;
+  --ink:#26221C; --ink-soft:#6E675C;
+  --accent:#37517B;            /* 藏蓝 */
+  --accent-paper:#C1913F;      /* 芥黄 */
+  --kraft:#AE4B32;             /* 砖红 */
+  --field-text:#EFE8D8; --field-text-soft:rgba(239,232,216,.74);
+  --P:file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper;
+  --lift-f:drop-shadow(0 2px 2px rgba(0,0,0,.30)) drop-shadow(0 12px 22px rgba(0,0,0,.34));
+  --lift-hi:drop-shadow(0 3px 3px rgba(0,0,0,.36)) drop-shadow(0 20px 34px rgba(0,0,0,.42));
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  width:1200px; height:1500px; overflow:hidden; position:relative;
+  background-color:var(--field);
+  font-family:"PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  color:var(--field-text);
+  padding:52px 54px 40px;
+}
+/* 炭黑毛毡底 */
+body::before{
+  content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/field-charcoal.webp);
+  background-size:cover; background-position:center; filter:brightness(.92);
+}
+body::after{ /* 四角晕影，让中心浮起来 */
+  content:''; position:absolute; inset:0; pointer-events:none; z-index:60;
+  background:radial-gradient(ellipse 118% 116% at 50% 44%,transparent 56%,rgba(0,0,0,.30) 100%);
+}
+.wrap{position:relative; z-index:10; height:100%; display:flex; flex-direction:column}
+
+/* ── 真卡纸纸片：三档轮廓轮着用，同页不许全同 ── */
+.piece{
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-panel.webp);
+  background-size:100% 100%; background-color:#FFFEFA;
+  background-blend-mode:multiply; border:none; color:var(--ink);
+  filter:var(--lift-f); position:relative;
+}
+.piece.c2{background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-tall.webp)}
+.piece.c3{background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-panel-flip.webp)}
+.piece.hi{filter:var(--lift-hi)}
+.piece.blue{background-color:var(--accent); color:var(--paper)}
+.piece.gold{background-color:var(--accent-paper); color:#2A2418}
+.piece.red{background-color:var(--kraft); color:var(--paper)}
+.piece.dark{background-color:#3A3733; color:var(--paper)}
+.pin{position:relative; display:block}
+.r1{transform:rotate(-.55deg)} .r2{transform:rotate(.7deg)}
+.r3{transform:rotate(-.95deg)} .r4{transform:rotate(.45deg)}
+/* 和纸胶带贴在 piece 外层 —— 贴里面会被材质裁掉 */
+.tape{
+  position:absolute; width:108px; height:36px; z-index:4;
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/washi-tape.webp);
+  background-size:100% 100%; background-color:var(--accent-paper);
+  background-blend-mode:multiply; opacity:.94;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.3));
+}
+.tape.tl{top:-15px; left:38px; transform:rotate(-7deg)}
+.tape.tr{top:-15px; right:38px; transform:rotate(6deg)}
+
+/* ── 头 ── */
+.brand{display:flex; align-items:center; gap:12px; margin-bottom:20px}
+.brand .ear{font-size:34px}
+.brand .nm{font-size:25px; font-weight:800; letter-spacing:3px; color:var(--field-text)}
+.brand .os{
+  margin-left:auto; font-size:19px; letter-spacing:2px; padding:7px 16px;
+  color:var(--paper); background-color:var(--kraft);
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-band.webp);
+  background-size:100% 100%; background-blend-mode:multiply;
+  transform:rotate(-1.4deg); font-weight:700;
+}
+.title{font-size:82px; font-weight:900; letter-spacing:-2px; line-height:1.02; color:var(--field-text)}
+.title .hl{
+  display:inline-block; padding:0 20px 9px; color:var(--paper);
+  background-color:var(--accent);
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-band.webp);
+  background-size:100% 100%; background-blend-mode:multiply;
+  transform:rotate(-1deg);
+}
+.sub{font-size:27px; color:var(--field-text-soft); margin-top:18px; line-height:1.5}
+.sub b{color:var(--accent-paper); font-weight:700}
+
+/* ── 数据 ── */
+.stat{display:flex; gap:16px; margin:26px 0 24px}
+.stat .cell{flex:1; padding:18px 14px; text-align:center}
+.stat .num{font-size:50px; font-weight:900; line-height:1}
+.stat .num s{text-decoration:none; font-size:26px}
+.stat .lbl{font-size:19px; margin-top:7px; opacity:.75}
+.stat .ar{display:flex; align-items:center; font-size:38px; color:var(--accent-paper); font-weight:900}
+
+/* ── 小节 ── */
+.h{display:flex; align-items:center; gap:13px; margin:0 0 15px}
+.h .no{
+  width:44px; height:44px; flex:none; display:grid; place-items:center;
+  font-size:23px; font-weight:900; color:var(--paper);
+  background-color:var(--kraft);
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-tall.webp);
+  background-size:100% 100%; background-blend-mode:multiply;
+  transform:rotate(-2.4deg);
+}
+.h .t{font-size:33px; font-weight:800; color:var(--field-text)}
+
+.ways{display:flex; gap:16px; align-items:stretch; margin-bottom:26px}
+.ways .pin{flex:1; display:flex}
+.way{width:100%; padding:22px 22px}
+.way .k{font-size:22px; font-weight:900; margin-bottom:9px; color:var(--accent)}
+.way .d{font-size:20px; line-height:1.55; color:var(--ink-soft)}
+.way .d b{color:var(--ink)}
+.way code{background-color:#E2DBC9; padding:1px 7px; font-size:18px;
+  color:var(--ink); font-family:ui-monospace,Menlo,monospace}
+
+/* ── 流程 ── */
+.flow{display:flex; flex-direction:column; gap:11px}
+.step{display:flex; align-items:center; gap:16px; padding:16px 22px}
+.step .i{
+  width:38px; height:38px; flex:none; display:grid; place-items:center;
+  font-size:20px; font-weight:900; color:var(--paper);
+  background-color:var(--accent); font-family:ui-monospace,Menlo,monospace;
+}
+.step .t{font-size:22px; font-weight:700; line-height:1.3}
+.step .t em{font-style:normal; font-weight:400; font-size:19px; color:var(--ink-soft)}
+.step.warn .i{background-color:var(--kraft)}
+.step.warn .t em{color:var(--kraft)}
+.step.gold .i{background-color:var(--accent-paper); color:#2A2418}
+
+/* ── 页脚 ── */
+.foot{margin-top:auto; display:flex; align-items:center; gap:18px; padding-top:20px}
+.foot .badges{display:flex; gap:9px; flex-wrap:wrap; flex:1}
+.foot .b{
+  font-size:17px; padding:8px 13px; font-weight:700; color:var(--ink);
+  background-color:#E8E1CF;
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-tall.webp);
+  background-size:100% 100%; background-blend-mode:multiply;
+}
+.foot .url{
+  font-size:23px; font-weight:900; font-family:ui-monospace,Menlo,monospace;
+  color:var(--paper); padding:14px 22px; letter-spacing:-.5px;
+  background-color:var(--accent);
+  background-image:url(file:///Users/jane/.claude/skills/paper-collage-cardstock/assets/paper/card-band.webp);
+  background-size:100% 100%; background-blend-mode:multiply;
+  transform:rotate(.7deg); filter:var(--lift-f);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand">
+    <span class="ear">👂</span><span class="nm">小 耳 出 品</span>
+    <span class="os">OPEN SOURCE · MIT</span>
+  </div>
+
+  <div class="title">微信<span class="hl">存储清理器</span></div>
+  <div class="sub">你的 Mac 上，微信正悄悄占着<b>几十 GB</b><br>
+    它们藏在系统深层目录，<b>Finder 里根本翻不到</b></div>
+
+  <div class="stat">
+    <div class="pin r1" style="flex:1"><div class="piece hi cell">
+      <div class="num" style="color:var(--kraft)">154<s>GB</s></div><div class="lbl">清理前</div></div></div>
+    <div class="ar">→</div>
+    <div class="pin r2" style="flex:1"><div class="piece c2 hi cell">
+      <div class="num" style="color:var(--accent)">19<s>GB</s></div><div class="lbl">清理后</div></div></div>
+    <div class="pin r3" style="flex:1.15"><div class="piece c3 gold hi cell">
+      <div class="num">135<s>GB</s></div><div class="lbl" style="opacity:.85">拿回来的空间</div></div></div>
+  </div>
+
+  <div class="h"><div class="no">装</div><div class="t">两种用法，选一个</div></div>
+  <div class="ways">
+    <div class="pin r2"><span class="tape tl"></span><div class="piece way">
+      <div class="k">① 自己双击</div>
+      <div class="d"><b>右键</b>点 <code>清理微信存储.command</code> →「打开」<br>
+      <span style="font-size:17px;opacity:.8">首次必须右键，macOS 会拦未签名脚本</span></div>
+    </div></div>
+    <div class="pin r4"><span class="tape tr"></span><div class="piece c3 way">
+      <div class="k">② 丢给 AI 助手</div>
+      <div class="d">把文件夹给 Claude Code / Cursor，说<br><b>「帮我清理微信占的空间」</b>
+      <span style="font-size:17px;opacity:.8">　它读 AGENTS.md 代劳</span></div>
+    </div></div>
+  </div>
+
+  <div class="h"><div class="no">跑</div><div class="t">然后一步一步发生什么</div></div>
+  <div class="flow">
+    <div class="pin r1"><div class="piece step">
+      <div class="i">1</div><div class="t">找到微信藏文件的地方　<em>不碰任何文件</em></div></div></div>
+    <div class="pin r2"><div class="piece c2 step">
+      <div class="i">2</div><div class="t">告诉你哪个月占了多少　<em>视频 23GB · 文件 12GB…</em></div></div></div>
+    <div class="pin r3"><div class="piece c3 step">
+      <div class="i">3</div><div class="t">问你：留几个月？搬到哪？　<em>不替你决定</em></div></div></div>
+    <div class="pin r4"><div class="piece step">
+      <div class="i">4</div><div class="t">搬出来按类型分好　<em>文档 / 表格 / 图片 / 视频 / 压缩包</em></div></div></div>
+    <div class="pin r1"><div class="piece c2 step gold">
+      <div class="i">5</div><div class="t">你花五分钟挑着删　<em>工具不替你删任何东西</em></div></div></div>
+    <div class="pin r2"><div class="piece c3 step warn">
+      <div class="i">!</div><div class="t">删完空间没释放？<em>　是 Time Machine 快照攥着，跑 --check-space</em></div></div></div>
+  </div>
+
+  <div class="foot">
+    <div class="badges">
+      <span class="b">只移动 · 绝不删除</span>
+      <span class="b">聊天记录一条不少</span>
+      <span class="b">零依赖 · 代码可通读</span>
+      <span class="b">可设每 3 个月自动整理</span>
+    </div>
+    <div class="url">github.com/Jane-xiaoer/wechat-cleaner</div>
+  </div>
+
+</div>
+</body>
+</html>

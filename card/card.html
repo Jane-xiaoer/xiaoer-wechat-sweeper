@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>微信存储清理器 · 使用卡片</title>
+<style>
+/* 配色取自 paper-collage-ppt 的 t7 苔绿清晨：清爽、有呼吸感，贴合「清理」这件事 */
+:root{
+  --field:#E7EBE1; --field-deep:#D7DECF; --paper:#FBFCF8;
+  --ink:#2C332B; --ink-soft:#6F7A6C;
+  --accent:#3F6D4E; --accent-rgb:63,109,78; --accent-paper:#CDDCC9;
+  --kraft:#A8B49A; --shadow-rgb:44,51,43;
+  --warn:#B5533C;
+  --keyline:3px;
+  /* 手剪轮廓：四边都不是直线 */
+  --cut:polygon(0.8% 2.4%, 26% 0.4%, 53% 2.2%, 79% 0.6%, 99.2% 2.8%,
+                98.4% 28%, 99.6% 54%, 98.2% 78%, 99.4% 97.4%,
+                74% 99.6%, 48% 97.6%, 22% 99.4%, 0.6% 97.2%,
+                1.8% 74%, 0.2% 48%, 1.6% 26%);
+  --cut2:polygon(0.4% 3.2%, 31% 0.6%, 58% 2.8%, 86% 0.4%, 99.6% 3.4%,
+                98.2% 33%, 99.8% 61%, 98.6% 84%, 99.2% 96.8%,
+                68% 99.4%, 41% 97.2%, 14% 99.6%, 0.8% 96.4%,
+                2.2% 68%, 0.4% 41%, 1.2% 18%);
+  --lift-f:drop-shadow(0 2px 1px rgba(var(--shadow-rgb),.10))
+           drop-shadow(0 8px 14px rgba(var(--shadow-rgb),.13));
+  --lift-hi:drop-shadow(0 3px 2px rgba(var(--shadow-rgb),.13))
+            drop-shadow(0 16px 26px rgba(var(--shadow-rgb),.17));
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  width:1200px; overflow:hidden; background:var(--field); color:var(--ink);
+  font-family:"PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  padding:64px 56px 52px;
+  /* 纸面纤维 */
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(255,255,255,.55), transparent 42%),
+    radial-gradient(circle at 82% 88%, rgba(var(--shadow-rgb),.05), transparent 46%);
+}
+.piece{
+  background:var(--paper); border:var(--keyline) solid var(--paper);
+  clip-path:var(--cut); filter:var(--lift-f); position:relative;
+}
+.piece.hi{filter:var(--lift-hi)}
+.piece.tinted{background:var(--accent-paper)}
+.piece.kraft{background:var(--kraft)}
+.piece.inked{background:var(--ink); color:var(--paper)}
+.piece.accent{background:var(--accent); color:var(--paper)}
+/* 纸不是全平的：受光面 + 边缘吃光 */
+.piece:nth-of-type(even){clip-path:var(--cut2)}
+.piece:nth-of-type(even)::before{clip-path:var(--cut2)}
+/* 纸纤维：细密随机短纹，纯色块看着就是塑料 */
+.piece::after{
+  content:''; position:absolute; inset:0; pointer-events:none; opacity:.5;
+  background-image:
+    repeating-linear-gradient(97deg, rgba(var(--shadow-rgb),.030) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(6deg,  rgba(var(--shadow-rgb),.022) 0 1px, transparent 1px 7px),
+    radial-gradient(circle at 22% 34%, rgba(var(--shadow-rgb),.05), transparent 30%),
+    radial-gradient(circle at 76% 68%, rgba(255,255,255,.30), transparent 34%);
+  clip-path:inherit;
+}
+.piece::before{
+  content:''; position:absolute; inset:calc(var(--keyline)*-1); pointer-events:none;
+  background:linear-gradient(115deg,rgba(255,255,255,.38),transparent 42%,rgba(var(--shadow-rgb),.07) 88%);
+  clip-path:var(--cut);
+}
+.r1{transform:rotate(-.5deg)} .r2{transform:rotate(.7deg)}
+.r3{transform:rotate(-.9deg)} .r4{transform:rotate(.4deg)}
+/* 胶带贴在 piece 外层，否则被 clip-path 剪掉 */
+.pin{position:relative; display:block}
+.tape{
+  position:absolute; width:96px; height:30px; z-index:3;
+  background:linear-gradient(105deg,rgba(214,222,200,.82),rgba(196,206,180,.72));
+  box-shadow:0 1px 3px rgba(var(--shadow-rgb),.16);
+}
+.tape.tl{top:-13px; left:44px; transform:rotate(-6deg)}
+.tape.tr{top:-13px; right:44px; transform:rotate(5deg)}
+
+/* ── 头部 ── */
+.head{text-align:center; margin-bottom:42px}
+.title{font-size:76px; font-weight:800; letter-spacing:-2px; line-height:1.06}
+.title .cut{
+  display:inline-block; background:var(--accent); color:var(--paper);
+  padding:2px 18px 8px; clip-path:var(--cut); transform:rotate(-1.2deg);
+}
+.sub{font-size:30px; color:var(--ink-soft); margin-top:22px; line-height:1.5}
+.sub b{color:var(--ink); font-weight:700}
+
+/* ── 数据条 ── */
+.stat{display:flex; gap:22px; margin:40px 0 46px; align-items:stretch}
+.stat .cell{flex:1; padding:26px 22px; text-align:center}
+.stat .num{font-size:56px; font-weight:800; line-height:1}
+.stat .lbl{font-size:22px; color:var(--ink-soft); margin-top:10px}
+.stat .arrow{
+  display:flex; align-items:center; font-size:44px; color:var(--accent);
+  font-weight:800; padding:0 4px;
+}
+
+/* ── 区块 ── */
+.sec{margin-bottom:44px}
+.sec-h{display:flex; align-items:center; gap:16px; margin-bottom:24px}
+.sec-h .no{
+  width:52px; height:52px; flex:none; display:grid; place-items:center;
+  background:var(--ink); color:var(--paper); font-size:27px; font-weight:800;
+  clip-path:var(--cut); transform:rotate(-2deg);
+}
+.sec-h .tx{font-size:38px; font-weight:800}
+
+/* 安装两条路 */
+.ways{display:flex; gap:22px; align-items:stretch}
+.ways .pin{flex:1; display:flex}
+.ways .way{width:100%}
+.way{padding:30px 28px}
+.way .k{font-size:25px; font-weight:800; margin-bottom:12px; color:var(--accent)}
+.way .d{font-size:23px; line-height:1.62; color:var(--ink-soft)}
+.way .d code{
+  background:var(--field-deep); padding:2px 9px; border-radius:3px;
+  font-size:21px; color:var(--ink); font-family:ui-monospace,Menlo,monospace;
+}
+
+/* 流程五步 */
+.flow{display:flex; flex-direction:column; gap:16px}
+.step{display:flex; align-items:flex-start; gap:20px; padding:24px 28px}
+.step .i{
+  width:46px; height:46px; flex:none; display:grid; place-items:center;
+  background:var(--accent-paper); color:var(--accent);
+  font-size:24px; font-weight:800; clip-path:var(--cut);
+}
+.step .t{font-size:26px; font-weight:700; line-height:1.35}
+.step .t em{font-style:normal; color:var(--ink-soft); font-weight:400; font-size:23px}
+.step.warn .i{background:var(--warn); color:var(--paper)}
+.step.warn .t em{color:var(--warn)}
+
+/* 保证 */
+.promise{display:flex; gap:18px; margin-top:6px}
+.promise .p{flex:1; padding:24px 20px; text-align:center}
+.promise .p .ic{font-size:34px; margin-bottom:10px}
+.promise .p .tt{font-size:23px; font-weight:700; line-height:1.4}
+
+/* 页脚 */
+.foot{margin-top:48px; text-align:center; padding:30px 24px}
+.foot .u{font-size:31px; font-weight:800; font-family:ui-monospace,Menlo,monospace; letter-spacing:-.5px}
+.foot .n{font-size:21px; color:var(--ink-soft); margin-top:12px}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="title">🧹 微信<span class="cut">存储清理器</span></div>
+  <div class="sub">你的 Mac 上，微信可能正悄悄占着<b>几十 GB</b><br>
+  它们藏在系统深层目录，<b>Finder 里根本翻不到</b></div>
+</div>
+
+<div class="stat">
+  <div class="pin r1"><div class="piece hi cell">
+    <div class="num" style="color:var(--warn)">154<span style="font-size:30px">GB</span></div>
+    <div class="lbl">清理前</div>
+  </div></div>
+  <div class="arrow">→</div>
+  <div class="pin r2"><div class="piece hi cell">
+    <div class="num" style="color:var(--accent)">19<span style="font-size:30px">GB</span></div>
+    <div class="lbl">清理后</div>
+  </div></div>
+  <div class="pin r3"><div class="piece tinted cell">
+    <div class="num" style="color:var(--accent)">135<span style="font-size:30px">GB</span></div>
+    <div class="lbl">拿回来的空间</div>
+  </div></div>
+</div>
+
+<div class="sec">
+  <div class="sec-h"><div class="no">装</div><div class="tx">两种用法，选一个</div></div>
+  <div class="ways">
+    <div class="pin r2"><span class="tape tl"></span><div class="piece way">
+      <div class="k">① 自己双击</div>
+      <div class="d">下载解压后，<b>右键</b>点 <code>清理微信存储.command</code> →「打开」<br>
+      <span style="font-size:20px">（首次必须右键，macOS 会拦未签名脚本）</span></div>
+    </div></div>
+    <div class="pin r4"><span class="tape tr"></span><div class="piece way">
+      <div class="k">② 丢给 AI 助手</div>
+      <div class="d">把文件夹给 Claude Code / Cursor，说<br>
+      「<b>帮我清理微信占的空间</b>」<br>
+      <span style="font-size:20px">（它会读 AGENTS.md 全程代劳）</span></div>
+    </div></div>
+  </div>
+</div>
+
+<div class="sec">
+  <div class="sec-h"><div class="no">跑</div><div class="tx">然后一步一步发生什么</div></div>
+  <div class="flow">
+    <div class="pin r1"><div class="piece step">
+      <div class="i">1</div><div class="t">自动找到微信藏文件的地方
+      <em>　支持一台电脑登过好几个微信号 · 这步不碰任何文件</em></div>
+    </div></div>
+    <div class="pin r2"><div class="piece step">
+      <div class="i">2</div><div class="t">告诉你实情：哪个月占了多少
+      <em>　视频 23GB、文件 12GB、2025-11 最肥 3.9GB…</em></div>
+    </div></div>
+    <div class="pin r3"><div class="piece step">
+      <div class="i">3</div><div class="t">问你两件事：留几个月？搬到哪？
+      <em>　默认留最近 3 个月 · 位置你自己定，不替你决定</em></div>
+    </div></div>
+    <div class="pin r4"><div class="piece step">
+      <div class="i">4</div><div class="t">搬出来，按类型分好
+      <em>　📄文档 📊表格 📽演示 🖼图片 🎬视频 📦压缩包</em></div>
+    </div></div>
+    <div class="pin r1"><div class="piece step tinted">
+      <div class="i">5</div><div class="t">你花五分钟挑着删
+      <em>　视频基本全删，文档留几个 —— 工具不替你删任何东西</em></div>
+    </div></div>
+    <div class="pin r2"><div class="piece step warn">
+      <div class="i">!</div><div class="t">删完空间没释放？那是 macOS 的锅
+      <em>　Time Machine 本地快照攥着已删文件，跑 --check-space 一查便知</em></div>
+    </div></div>
+  </div>
+</div>
+
+<div class="promise">
+  <div class="pin r3"><div class="piece p">
+    <div class="ic">🔒</div><div class="tt">只移动<br>绝不删除</div>
+  </div></div>
+  <div class="pin r1"><div class="piece p">
+    <div class="ic">💬</div><div class="tt">聊天记录<br>一条不少</div>
+  </div></div>
+  <div class="pin r4"><div class="piece p">
+    <div class="ic">📖</div><div class="tt">零依赖<br>代码可通读</div>
+  </div></div>
+  <div class="pin r2"><div class="piece p">
+    <div class="ic">⏰</div><div class="tt">可设每 3 个月<br>自动整理</div>
+  </div></div>
+</div>
+
+<div class="pin r1" style="display:block"><div class="piece inked foot">
+  <div class="u">github.com/Jane-xiaoer/wechat-cleaner</div>
+  <div class="n" style="color:rgba(251,252,248,.7)">MIT License　·　macOS　·　Python 3 自带即可跑</div>
+</div></div>
+
+</body>
+</html>

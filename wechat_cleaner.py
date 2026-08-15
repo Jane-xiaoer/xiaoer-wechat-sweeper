@@ -26,7 +26,12 @@ from pathlib import Path
 from datetime import date
 from collections import defaultdict
 
-VERSION = "1.0"
+VERSION = "1.1"
+
+try:
+    import dedup as _dedup
+except ImportError:
+    _dedup = None
 
 # ── 微信可能的安装位置（新版 4.x 和旧版都覆盖）──────────────
 WECHAT_ROOTS = [
@@ -232,7 +237,7 @@ USAGE = """
     --dest X    文件搬到哪里
     --months N  保留最近 N 个月不动（默认 3）
     --yes       跳过确认（agent 已代用户确认过才用）
-    --auto      定时任务模式：全自动 + 建提醒事项\n    --check-space  删完空间没释放时用：查 Time Machine 本地快照
+    --auto      定时任务模式：全自动 + 建提醒事项\n    --no-dedup  跳过查重（默认会查：很多文件你电脑上早就有了）\n    --check-space  删完空间没释放时用：查 Time Machine 本地快照
 """
 
 
@@ -265,8 +270,10 @@ def emit_json(keep: int):
 
 
 # ═══════════════ 主流程 ═══════════════
-def harvest(months_rows, dest_root: Path, kind: str, apply: bool):
-    """把选中的月份搬进 dest_root，按类型分好"""
+def harvest(months_rows, dest_root: Path, kind: str, apply: bool, dup_map=None):
+    """把选中的月份搬进 dest_root，按类型分好。
+    dup_map 里的文件不参与分类，单独归到 _重复_电脑里已有/ 供用户过目。"""
+    dup_map = dup_map or {}
     if not months_rows:
         return 0, 0
     y1, m1 = months_rows[0][0], months_rows[0][1]
@@ -284,7 +291,7 @@ def harvest(months_rows, dest_root: Path, kind: str, apply: bool):
         for f in list(src.rglob("*")):
             if not f.is_file() or f.name == ".DS_Store":
                 continue
-            cat = category_of(f.name)
+            cat = ("_重复_电脑里已有" if f in dup_map else category_of(f.name))
             buckets[cat] += 1
             n += 1
             try:
@@ -444,11 +451,43 @@ def main():
         else:
             dest = default_dest
 
-    # ⑤ 预演
+    # ⑤ 去重：很多文件你电脑上早就有了（自己发出去的、自己收藏的）
+    dup_map = {}
+    if _dedup and not ("--no-dedup" in sys.argv):
+        allf = [f for rows in picked.values() for _y, _m, src, _s, _c in rows
+                for f in src.rglob("*") if f.is_file() and f.name != ".DS_Store"]
+        if allf:
+            title("查重 —— 哪些文件你电脑上已经有了")
+            roots = ["~/Desktop", "~/Documents", "~/Downloads"]
+            if not auto:
+                extra = ask("除了 桌面/文稿/下载，还要扫哪些目录？(逗号分隔，回车跳过)", "")
+                roots += [x.strip() for x in extra.split(",") if x.strip()]
+            print("  建索引中…", flush=True)
+            idx, n = _dedup.build_index(roots)
+            print(f"  本机 {n} 个文件已入索引")
+            dups, suspect = _dedup.check(allf, idx)
+            dup_map = {f: hit for f, hit, _w in dups}
+            if dups:
+                dsz = sum(f.stat().st_size for f, _h, _w in dups if f.exists())
+                print(f"\n  🔁 {len(dups)} 个是重复的（{human(dsz)}），"
+                      f"会单独归到 _重复_电脑里已有/ 不删除")
+                for f, hit, why in dups[:6]:
+                    print(f"     [{why}] {f.name[:42]}")
+                if len(dups) > 6:
+                    print(f"     …还有 {len(dups)-6} 个")
+            else:
+                print("  ✅ 没发现重复")
+            if suspect:
+                print(f"\n  ❓ {len(suspect)} 个内容一致但文件名不同，"
+                      f"不替你判定，照常分类：")
+                for f, hit, _w in suspect[:4]:
+                    print(f"     {f.name[:40]}  ↔  {Path(hit).name[:34]}")
+
+    # ⑥ 预演
     title("预演 —— 下面这些会被搬走（现在还没动）")
     pn = ps = 0
     for kind, rows in picked.items():
-        n, s = harvest(rows, dest, kind, apply=False)
+        n, s = harvest(rows, dest, kind, apply=False, dup_map=dup_map)
         pn += n
         ps += s
     print(f"\n  合计 {pn} 个文件，{human(ps)}")
@@ -463,7 +502,7 @@ def main():
     dest.mkdir(parents=True, exist_ok=True)
     tn = ts = 0
     for kind, rows in picked.items():
-        n, s = harvest(rows, dest, kind, apply=True)
+        n, s = harvest(rows, dest, kind, apply=True, dup_map=dup_map)
         tn += n
         ts += s
 
