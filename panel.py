@@ -162,8 +162,112 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
-            self._send((HERE / "panel.html").read_bytes(), "text/html")
+        route = self.path.split("?", 1)[0]
+        if route in ("/", "/index.html", "/watercolor", "/watercolor/"):
+            html = (HERE / "panel.html").read_text(encoding="utf-8")
+            traditional = {
+                "扫": "掃", "电": "電", "脑": "腦", "占": "佔",
+                "还": "還", "过": "過", "里": "裡", "发": "發",
+                "个": "個", "说": "說", "现": "現", "开": "開",
+                "动": "動", "这": "這", "么": "麼", "夹": "夾",
+                "复": "複", "归": "歸", "类": "類", "录": "錄",
+                "机": "機", "从": "從", "实": "實", "体": "體",
+                "号": "號", "认": "認", "筛": "篩", "单": "單",
+                "后": "後", "应": "應", "删": "刪", "误": "誤",
+                "总": "總", "盘": "盤", "统": "統", "网": "網",
+                "连": "連", "话": "話", "记": "記", "图": "圖",
+                "见": "見", "终": "終", "条": "條", "给": "給",
+                "别": "別", "进": "進", "关": "關", "标": "標",
+                "间": "間", "线": "線", "压": "壓", "缩": "縮",
+            }
+            html = html.translate(str.maketrans(traditional))
+            html = html.replace("🧹 開始清理", "開始清掃")
+            html = html.replace("下一步 →", "下一步　›")
+            html = html.replace("開始清掃 →", "開始清掃　›")
+            html = html.replace("📂 去看文件夾", "查看文件夾")
+            html = html.replace("📁 换一個文件夾…", "選擇另一個文件夾…")
+            html = html.replace("📁 換一個文件夾…", "選擇另一個文件夾…")
+            html = html.replace(
+                '<div class="slider">',
+                '<div class="slider"><span class="brush-cursor" '
+                'aria-hidden="true"></span>',
+            )
+            html = html.replace(
+                "</head>",
+                '<link rel="icon" type="image/png" href="/assets/app-icon.png?v=2.2.0">\n'
+                '<link rel="stylesheet" href="/watercolor-ui.css?v=2.2.0">\n</head>',
+            )
+            html = html.replace(
+                "<main>",
+                '<main><img class="watercolor-mascot" '
+                'src="/assets/watercolor-mascot.png?v=2.2.0" '
+                'alt="" aria-hidden="true">',
+            )
+            html = html.replace(
+                '<div class="foot">',
+                '<span class="watercolor-seal" aria-hidden="true">小<br>耳</span>'
+                '<div class="foot">',
+            )
+            html = html.replace(
+                "</body>",
+                '<script>(()=>{const s=document.getElementById("keep"),'
+                'b=document.querySelector(".brush-cursor");if(!s||!b)return;'
+                'const paint=()=>{const p=(+s.value-+s.min)/(+s.max-+s.min);'
+                's.style.setProperty("--paint",`${p*100}%`);'
+                'b.style.left=`${s.offsetLeft+10+p*(s.offsetWidth-20)}px`;'
+                'b.style.top=`${s.offsetTop+s.offsetHeight/2}px`};'
+                's.setAttribute("aria-label","拖動毛筆選擇保留月份");'
+                's.title="拖動毛筆，選擇要保留的月份";'
+                's.addEventListener("input",paint);window.addEventListener('
+                '"resize",paint);requestAnimationFrame(paint)})()</script>\n</body>',
+            )
+            html = html.replace(
+                "</body>",
+                '<script>(()=>{const raw=window.go;let changing=false;'
+                'window.go=n=>{const cur=document.querySelector(".step.on");'
+                'if(changing)return;if(!cur||cur.id===`p${n}`||matchMedia('
+                '"(prefers-reduced-motion: reduce)").matches)return raw(n);'
+                'changing=true;cur.classList.add("ink-away");setTimeout(()=>{'
+                'cur.classList.remove("ink-away");raw(n);changing=false},260)}})()'
+                '</script>\n</body>',
+            )
+            if "step=" in self.path:
+                try:
+                    step = max(1, min(5, int(self.path.split("step=")[1].split("&")[0])))
+                    html = html.replace(
+                        "</body>",
+                        f"<script>setTimeout(() => go({step}), 900)</script>\n</body>",
+                    )
+                except ValueError:
+                    pass
+            self._send(html.encode("utf-8"), "text/html")
+        elif route == "/watercolor-ui.css":
+            self._send((HERE / "watercolor-ui.css").read_bytes(), "text/css")
+        elif route in ("/assets/app-icon.png", "/favicon.ico"):
+            self._send(
+                (HERE / "assets" / "app-icon.png").read_bytes(),
+                "image/png",
+            )
+        elif route == "/assets/watercolor-paper.png":
+            self._send(
+                (HERE / "assets" / "watercolor-paper.png").read_bytes(),
+                "image/png",
+            )
+        elif route == "/assets/watercolor-mascot.png":
+            self._send(
+                (HERE / "assets" / "watercolor-mascot.png").read_bytes(),
+                "image/png",
+            )
+        elif route == "/assets/watercolor-button.png":
+            self._send(
+                (HERE / "assets" / "watercolor-button.png").read_bytes(),
+                "image/png",
+            )
+        elif route == "/assets/watercolor-brush-thumb.png":
+            self._send(
+                (HERE / "assets" / "watercolor-brush-thumb.png").read_bytes(),
+                "image/png",
+            )
         elif self.path.startswith("/api/scan"):
             keep = 3
             if "keep=" in self.path:
