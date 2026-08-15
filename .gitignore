@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .tmp/
+小耳微信清扫器.app/
+*.zip
