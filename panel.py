@@ -8,7 +8,8 @@
 设计取舍：
   · 只监听 127.0.0.1，随机端口，退出即关 —— 不对外暴露任何东西
   · 零依赖，http.server 是 Python 标准库
-  · 「选文件夹」浏览器给不了真实路径，所以后端调 macOS 原生 Finder 选择框
+  · 「选文件夹」浏览器给不了真实路径，所以后端调系统原生选择框
+    （macOS 走 osascript，Windows 走 PowerShell 的 FolderBrowserDialog）
   · 所有危险动作（真正移动文件）必须前端显式确认后才发 /api/run
 """
 
@@ -45,8 +46,8 @@ def scan_payload(keep=3):
     accounts = wc.find_accounts()
     if not accounts:
         return {"ok": False, "error": "没找到微信数据目录。可能没装微信，或者从没登录过。"}
-    acc, msg = accounts[0]
-    data = wc.scan_months(msg)
+    acc, content, kinds = accounts[0]
+    data = wc.scan_months(content, kinds)
     today = date.today()
     cutoff = today.year * 12 + today.month - keep
     kinds = {}
@@ -71,13 +72,42 @@ def scan_payload(keep=3):
             "suggest": str(dest_guess)}
 
 
+IS_WIN = wc.IS_WIN
+
+# Windows 的文件夹选择框：-STA 是必须的，没有它对话框根本弹不出来；
+# 输出编码要显式设成 UTF-8，否则中文路径回来是乱码。
+PS_PICK = (
+    "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+    "Add-Type -AssemblyName System.Windows.Forms;"
+    "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+    "$d.Description = '选择存放微信文件的位置';"
+    "$d.ShowNewFolderButton = $true;"
+    "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }"
+)
+
+
 def pick_folder():
-    """调 macOS 原生选择框 —— 浏览器拿不到真实路径，只能借系统的"""
-    r = subprocess.run(
-        ["osascript", "-e",
-         'POSIX path of (choose folder with prompt "选择存放微信文件的位置")'],
-        capture_output=True, text=True)
+    """弹系统原生选择框 —— 浏览器拿不到真实路径，只能借系统的"""
+    if IS_WIN:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-STA", "-Command", PS_PICK],
+            capture_output=True, text=True, encoding="utf-8", errors="ignore")
+    else:
+        r = subprocess.run(
+            ["osascript", "-e",
+             'POSIX path of (choose folder with prompt "选择存放微信文件的位置")'],
+            capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def reveal(path):
+    """在文件管理器里打开一个文件夹"""
+    p = str(path)
+    if IS_WIN:
+        # explorer 就算成功也常返回非 0，别去判断返回码
+        subprocess.run(["explorer", p])
+    else:
+        subprocess.run(["open", p], capture_output=True)
 
 
 def do_run(keep, dest, use_dedup):
@@ -86,8 +116,8 @@ def do_run(keep, dest, use_dedup):
     STATE.update(running=True, done=False, log=[], dest=dest,
                  stage=1, detail="", result=None)
     try:
-        acc, msg = wc.find_accounts()[0]
-        data = wc.scan_months(msg)
+        acc, content, kinds = wc.find_accounts()[0]
+        data = wc.scan_months(content, kinds)
         today = date.today()
         cutoff = today.year * 12 + today.month - keep
         picked = {k: [r for r in rows if r[0] * 12 + r[1] <= cutoff]
@@ -144,7 +174,7 @@ def do_run(keep, dest, use_dedup):
                                if not k.startswith("_")), key=lambda x: -x[1]),
             "misc": misc, "dups": len(dup_map)}
         STATE.update(stage=4, detail="已打开文件夹")
-        subprocess.run(["open", str(d)], capture_output=True)
+        reveal(d)
     except Exception as e:
         STATE.update(detail=f"出错：{type(e).__name__}: {e}")
     finally:
@@ -298,8 +328,7 @@ class H(BaseHTTPRequestHandler):
             q = urllib.parse.urlparse(self.path).query
             tgt = urllib.parse.parse_qs(q).get("p", [""])[0]
             if tgt:
-                subprocess.run(["open", str(Path(tgt).expanduser())],
-                               capture_output=True)
+                reveal(Path(tgt).expanduser())
             self._send({"ok": True})
         elif self.path == "/api/pick":
             self._send({"path": pick_folder()})
@@ -308,6 +337,10 @@ class H(BaseHTTPRequestHandler):
                         "stage": STATE.get("stage"), "detail": STATE.get("detail"),
                         "result": STATE.get("result")})
         elif self.path == "/api/snapshots":
+            # Time Machine 本地快照是 macOS 独有的坑，Windows 没这回事
+            if IS_WIN:
+                self._send({"snapshots": []})
+                return
             r = subprocess.run(["tmutil", "listlocalsnapshots", "/"],
                                capture_output=True, text=True)
             snaps = [l.strip().replace("com.apple.TimeMachine.", "").replace(".local", "")
@@ -334,14 +367,31 @@ class H(BaseHTTPRequestHandler):
         pass            # 别把 HTTP 日志刷进终端，用户看的是浏览器
 
 
+MAC_BROWSERS = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+)
+
+
+def win_browsers():
+    """Windows 上浏览器可能装在三个地方（64 位、32 位、只给当前用户装）"""
+    out = []
+    bases = [os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"),
+             os.environ.get("LOCALAPPDATA")]
+    for b in filter(None, bases):
+        out += [str(Path(b) / "Google/Chrome/Application/chrome.exe"),
+                str(Path(b) / "Microsoft/Edge/Application/msedge.exe"),
+                str(Path(b) / "BraveSoftware/Brave-Browser/Application/brave.exe")]
+    return out
+
+
 def open_ui(url):
     """优先用 Chrome 的 --app 模式：无地址栏、无标签页，看着就是个独立应用窗口。
     没装 Chrome 就退回系统默认浏览器。"""
-    for chrome in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                   "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-                   "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"):
-        if Path(chrome).exists():
-            subprocess.Popen([chrome, f"--app={url}", "--window-size=880,1180"],
+    for exe in (win_browsers() if IS_WIN else MAC_BROWSERS):
+        if Path(exe).exists():
+            subprocess.Popen([exe, f"--app={url}", "--window-size=880,1180"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return
     webbrowser.open(url)

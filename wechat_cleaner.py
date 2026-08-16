@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-👂 小耳微信清扫器 for macOS
+👂 小耳微信清扫器 for macOS / Windows
 
 各个群里发的文件，微信默默存在你电脑上，你根本找不到在哪。
 
@@ -10,7 +10,7 @@
 你花五分钟挑一遍：有用的留下，没用的删掉。资料沉淀了，内存也清了。
 
 特点：
-  · 零依赖，只用 Python 标准库（macOS 自带 python3 就能跑）
+  · 零依赖，只用 Python 标准库（macOS 自带 python3；Windows 装个 Python 即可）
   · 只移动，绝不删除 —— 删不删由你决定
   · 默认预演，看清楚了才动手
   · 自动发现微信目录，支持多个微信号
@@ -18,6 +18,7 @@
 作者：小耳 (Xiaoer)  ·  MIT License
 """
 
+import os
 import re
 import sys
 import json
@@ -35,8 +36,22 @@ try:
 except ImportError:
     _dedup = None
 
-# ── 微信可能的安装位置（新版 4.x 和旧版都覆盖）──────────────
-WECHAT_ROOTS = [
+IS_MAC = platform.system() == "Darwin"
+IS_WIN = platform.system() == "Windows"
+
+# ── 微信数据目录 ────────────────────────────────────────────
+# 两代微信的目录布局不同，但「按 YYYY-MM 分月」这层是一样的，
+# 所以扫描 / 分类 / 搬运的逻辑两边通用，只有下面这张表要分开：
+#   新版 4.x（mac 与 Windows 同一代）  <账号>/msg/{file,video}/YYYY-MM
+#   旧版 3.x（Windows 上还有存量）     <账号>/FileStorage/{File,Video}/YYYY-MM
+# 每项 = (内容目录名, {逻辑类型: 实际子目录名}, 用来认出这套布局的探针目录)
+LAYOUTS = [
+    ("msg", {"video": "video", "file": "file"}, ("file", "video", "attach")),
+    ("FileStorage", {"video": "Video", "file": "File"}, ("File", "Video", "Image")),
+]
+
+# mac 上微信装在沙盒容器里，位置固定
+MAC_ROOTS = [
     "Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files",
     "Library/Containers/com.tencent.xinWeChat/Data/Library/Application Support/com.tencent.xinWeChat",
     "Library/Application Support/com.tencent.xinWeChat",
@@ -106,6 +121,34 @@ def load_custom_rules(folder: Path):
 
 
 MONTH_DIR = re.compile(r"^(\d{4})-(\d{1,2})$")
+DRIVE_PATH = re.compile(r"^[A-Za-z]:[\\/]")      # 认 Windows 盘符路径
+
+
+def setup_windows_console():
+    """Windows 控制台默认是 GBK，中文会变成一堆方块；顺便打开 ANSI 转义支持，
+    不然满屏都是 ←[1m 这种控制符。控制台和 Python 的流要一起改，只改一边照样乱。"""
+    if not IS_WIN:
+        return
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        k32.SetConsoleOutputCP(65001)
+        k32.SetConsoleCP(65001)
+        # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004，让 \033[1m 之类正常生效
+        handle = k32.GetStdHandle(-11)
+        mode = ctypes.c_uint32()
+        if k32.GetConsoleMode(handle, ctypes.byref(mode)):
+            k32.SetConsoleMode(handle, mode.value | 0x0004)
+    except Exception:
+        pass                                   # 没控制台（被重定向）就不用管
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+setup_windows_console()
 
 
 # ═══════════════ 小工具 ═══════════════
@@ -139,39 +182,108 @@ def title(t: str):
 
 
 def choose_folder():
-    """弹 Finder 原生选择框，比让人敲路径友好得多"""
-    r = subprocess.run(
-        ["osascript", "-e",
-         'POSIX path of (choose folder with prompt "选择存放微信文件的位置")'],
-        capture_output=True, text=True)
+    """弹系统原生选择框，比让人敲路径友好得多"""
+    if IS_WIN:
+        ps = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+              "Add-Type -AssemblyName System.Windows.Forms;"
+              "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+              "$d.Description = '选择存放微信文件的位置';"
+              "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }")
+        r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", ps],
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="ignore")
+    else:
+        r = subprocess.run(
+            ["osascript", "-e",
+             'POSIX path of (choose folder with prompt "选择存放微信文件的位置")'],
+            capture_output=True, text=True)
     if r.returncode == 0 and r.stdout.strip():
         return Path(r.stdout.strip())
     return None
 
 
 # ═══════════════ 1. 找微信 ═══════════════
-def find_accounts():
-    """返回 [(账号目录, msg目录)]，支持一台电脑登过多个微信号"""
+def win_data_roots():
+    """Windows 上数据目录可以被用户搬到任意盘，不能靠猜。
+    微信把它记在 %APPDATA%\\Tencent\\<品牌>\\config\\*.ini 里 ——
+    每个 ini 就是一行纯路径，指向数据目录的父目录。这是最可靠的来源；
+    读不到再退回几个默认位置。"""
+    roots, seen = [], []
+
+    def add(p):
+        try:
+            p = Path(p)
+        except (TypeError, ValueError):
+            return
+        # ini 里记的是父目录，真正的数据在它下面的 xwechat_files / WeChat Files；
+        # 但也可能直接就是数据目录，所以三种都试。
+        for cand in (p / "xwechat_files", p / "WeChat Files", p):
+            key = str(cand).lower()
+            if key not in seen:
+                seen.append(key)
+                roots.append(cand)
+
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        for brand in ("xwechat", "WeChat"):
+            cfg = Path(appdata) / "Tencent" / brand / "config"
+            if not cfg.is_dir():
+                continue
+            for ini in sorted(cfg.glob("*.ini")):
+                try:
+                    # utf-8-sig：这些 ini 可能带 BOM，带了就会把路径判断顶歪
+                    txt = ini.read_text(encoding="utf-8-sig", errors="ignore")
+                except OSError:
+                    continue
+                for line in txt.splitlines():
+                    line = line.strip().lstrip("\ufeff")
+                    # 只认看着像 C:\... 的绝对路径，跳过键值对和空行
+                    if DRIVE_PATH.match(line) and "=" not in line:
+                        add(line)
+
     home = Path.home()
-    found = []
-    for rel in WECHAT_ROOTS:
-        base = home / rel
-        if not base.is_dir():
+    for d in (home / "Documents", home,
+              home / "Documents" / "Tencent Files", Path("D:/"), Path("E:/")):
+        add(d)
+    return roots
+
+
+def find_accounts():
+    """返回 [(账号目录, 内容目录, {逻辑类型: 实际子目录名})]，
+    支持一台电脑登过多个微信号，也支持新旧两套目录布局。"""
+    if IS_WIN:
+        bases = win_data_roots()
+    else:
+        bases = [Path.home() / rel for rel in MAC_ROOTS]
+
+    found, seen = [], set()
+    for base in bases:
+        try:
+            if not base.is_dir():
+                continue
+            entries = list(base.iterdir())
+        except OSError:          # 盘不在、没权限：跳过，不能让它崩掉整轮扫描
             continue
-        for acc in base.iterdir():
+        for acc in entries:
             if not acc.is_dir():
                 continue
-            msg = acc / "msg"
-            if msg.is_dir() and any((msg / s).is_dir() for s in ("file", "video", "attach")):
-                found.append((acc, msg))
+            for sub, kinds, probe in LAYOUTS:
+                content = acc / sub
+                if content.is_dir() and any((content / s).is_dir() for s in probe):
+                    key = str(content).lower()
+                    if key not in seen:
+                        seen.add(key)
+                        found.append((acc, content, kinds))
+                    break
     return found
 
 
-def scan_months(msg: Path):
+def scan_months(content: Path, kinds=None):
     """扫出 {子类: [(年, 月, 路径, 大小, 文件数)]}"""
+    kinds = kinds or {"video": "video", "file": "file"}
     out = {}
-    for kind in ("video", "file"):
-        base = msg / kind
+    for kind, sub in kinds.items():
+        base = content / sub
         if not base.is_dir():
             continue
         rows = []
@@ -216,9 +328,31 @@ def category_of(name: str, custom=None) -> str:
     return "📎 杂项"
 
 
+def reveal(path):
+    """在文件管理器里打开一个文件夹"""
+    if IS_WIN:
+        # explorer 就算成功也常返回非 0，别去判断返回码
+        subprocess.run(["explorer", str(path)])
+    else:
+        subprocess.run(["open", str(path)], capture_output=True)
+
+
 def notify(title_: str, body: str):
     """建一条提醒事项；失败就退回横幅通知"""
     esc = lambda s: s.replace('"', "'")
+    if IS_WIN:
+        # Windows 没有「提醒事项」这种能留住的待办，退而求其次发个通知气泡。
+        # 用 BurntToast 之类的第三方模块才有真 toast，这里不引入任何依赖。
+        ps = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+              "Add-Type -AssemblyName System.Windows.Forms;"
+              "$n = New-Object System.Windows.Forms.NotifyIcon;"
+              "$n.Icon = [System.Drawing.SystemIcons]::Information;"
+              "$n.Visible = $true;"
+              f"$n.ShowBalloonTip(10000, '{esc(title_)}', '{esc(body)}', 'Info');"
+              "Start-Sleep -Seconds 10")
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       capture_output=True)
+        return
     script = (f'tell application "Reminders" to make new reminder at default list '
               f'with properties {{name:"{esc(title_)}", body:"{esc(body)}"}}')
     if subprocess.run(["osascript", "-e", script],
@@ -227,6 +361,67 @@ def notify(title_: str, body: str):
                         f'display notification "{esc(body)}" with title "{esc(title_)}"'],
                        capture_output=True)
 
+
+def check_space():
+    """删完发现空间没释放？两个系统各有各的元凶。"""
+    print("\n\033[1m🔍 检查空间为什么没释放\033[0m\n")
+    if IS_WIN:
+        ps = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+              "Get-PSDrive -PSProvider FileSystem | "
+              "ForEach-Object { if ($_.Used -ne $null) { "
+              "'{0}: 已用 {1:N1}GB，可用 {2:N1}GB' -f $_.Name,"
+              "($_.Used/1GB),($_.Free/1GB) } }")
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="ignore")
+        for line in r.stdout.splitlines():
+            if line.strip():
+                print(f"  {line.strip()}")
+        print("""
+  Windows 上空间没释放，按可能性从高到低查：
+
+  1. 回收站没清空 —— 本工具只移动不删除，但你自己删掉的那些还在回收站里躺着。
+     右键回收站 → 清空。
+
+  2. 文件还在原处 —— 本工具是「移动」，如果目标文件夹和微信数据在同一个盘，
+     总占用不会变。想真正腾出空间，得在挑拣之后把不要的删掉。
+
+  3. 系统还原点 / 卷影副本 —— 它们记着旧状态，攥着已删文件不放。
+     查看：系统属性 → 系统保护 → 配置 → 看「当前使用量」。
+""")
+        return
+
+    r = subprocess.run(["df", "-h", "/System/Volumes/Data"],
+                       capture_output=True, text=True)
+    if r.returncode == 0 and len(r.stdout.splitlines()) > 1:
+        c = r.stdout.splitlines()[1].split()
+        print(f"  磁盘：已用 {c[2]}，可用 {c[3]}\n")
+
+    r = subprocess.run(["tmutil", "listlocalsnapshots", "/"],
+                       capture_output=True, text=True)
+    snaps = [l.strip() for l in r.stdout.splitlines() if "com.apple" in l]
+    if not snaps:
+        print("  ✅ 没有本地快照。空间如果还是没释放，检查一下废纸篓有没有清空。")
+        return
+
+    print(f"  🔴 发现 {len(snaps)} 个 Time Machine 本地快照\n")
+    for s_ in snaps:
+        print(f"     {s_}")
+    print("""
+  这些快照记着「删除之前」的磁盘状态，所以你删掉的文件在它们眼里还活着，
+  空间自然还不了你。实测有台机器上快照一个人锁了 620GB。
+
+  ⚠️ 删快照的唯一代价：失去「从本地快照恢复误删文件」这个后悔药。
+     外接硬盘上的 Time Machine 备份不受影响，系统之后也会自己重建新快照。
+
+  确认要删就逐条执行：""")
+    for s_ in snaps:
+        d = s_.replace("com.apple.TimeMachine.", "").replace(".local", "")
+        print(f"     tmutil deletelocalsnapshots {d}")
+    print("""
+  想根治（不再自动生成快照，前提是你没在用 Time Machine 定时备份）：
+     系统设置 → 通用 → 时间机器 → 关闭「自动备份」
+""")
 
 
 USAGE = """
@@ -243,7 +438,7 @@ USAGE = """
     --json      输出 JSON 扫描结果后退出（绝不移动文件）
     --scan      同上，但输出人类可读格式
     --dest X    文件搬到哪里
-    --months N  保留最近 N 个月不动（默认 3）
+    --months N  保留最近 N 个月不动（默认 1）
     --yes       跳过确认（agent 已代用户确认过才用）
     --auto      全自动：不提问、不开窗，完事建一条提醒事项\n    --no-dedup  跳过查重（默认会查：很多文件你电脑上早就有了）\n    --check-space  删完空间没释放时用：查 Time Machine 本地快照
 """
@@ -255,8 +450,8 @@ def emit_json(keep: int):
     cutoff = today.year * 12 + today.month - keep
     out = {"version": VERSION, "date": str(today), "keep_months": keep,
            "accounts": []}
-    for acc, msg in find_accounts():
-        data = scan_months(msg)
+    for acc, content, kinds in find_accounts():
+        data = scan_months(content, kinds)
         info = {"account_dir": str(acc), "kinds": {}}
         for kind, rows in data.items():
             info["kinds"][kind] = {
@@ -352,8 +547,8 @@ def write_record(folder: Path, n: int, size: int, keep: int, dups: int):
 
 
 def main():
-    if platform.system() != "Darwin":
-        print("❌ 这个工具只适用于 macOS")
+    if not (IS_MAC or IS_WIN):
+        print("❌ 这个工具只支持 macOS 和 Windows")
         sys.exit(1)
 
     auto = "--auto" in sys.argv          # 全自动：不问不开窗，给脚本/助手调用用
@@ -361,6 +556,7 @@ def main():
     as_json = "--json" in sys.argv       # 结构化输出，给 AI agent 解析
     assume_yes = "--yes" in sys.argv     # 跳过确认，agent 已代用户确认过
     keep = 1
+    keep_given = "--months" in sys.argv   # 显式给了就别再问
     dest = None
     if "--months" in sys.argv:
         keep = int(sys.argv[sys.argv.index("--months") + 1])
@@ -387,19 +583,22 @@ def main():
         print("   可能原因：没装微信 / 从没登录过 / 版本路径不同")
         sys.exit(1)
 
-    if len(accounts) > 1 and not auto:
+    if len(accounts) > 1 and not auto and not assume_yes:
         print(f"发现 {len(accounts)} 个微信号：")
-        for i, (acc, _m) in enumerate(accounts, 1):
+        for i, (acc, _c, _k) in enumerate(accounts, 1):
             print(f"  {i}. {acc.name}")
         idx = int(ask("处理哪一个（填序号）", "1")) - 1
         accounts = [accounts[idx]]
+    elif len(accounts) > 1:
+        # --yes / --auto 是「别问我」的意思，这里再停下来等输入就会把调用方挂死
+        print(f"发现 {len(accounts)} 个微信号，按无人值守约定处理第一个：{accounts[0][0].name}")
 
-    acc, msg = accounts[0]
+    acc, content, kinds = accounts[0]
     print(f"📱 微信账号目录：{acc.name}")
 
     # ② 扫描
     title("扫描中…")
-    data = scan_months(msg)
+    data = scan_months(content, kinds)
     if not data:
         print("✨ 没找到按月存放的文件，也许这个号还没收过文件。")
         sys.exit(0)
@@ -417,8 +616,8 @@ def main():
     print(f"\n💾 合计占用：\033[1m{human(total)}\033[0m")
 
     # ③ 问：保留几个月
-    if not auto:
-        keep = int(ask("\n保留最近几个月不动？更早的搬出来", "3"))
+    if not auto and not assume_yes and not keep_given:
+        keep = int(ask("\n保留最近几个月不动？更早的搬出来", str(keep)))
 
     today = date.today()
     cutoff = today.year * 12 + today.month - keep
@@ -432,16 +631,19 @@ def main():
     # ④ 问：搬到哪
     if dest is None:
         default_dest = Path.home() / "Desktop/微信文件整理"
-        print(f"\n\033[36m?\033[0m 文件搬到哪里？")
-        print(f"    直接回车 = 用默认位置 {default_dest}")
-        print(f"    输入 f 回车 = 弹出 Finder 自己挑")
-        v = ask("    或直接粘贴一个路径", "")
-        if v.lower() == "f":
-            dest = choose_folder() or default_dest
-        elif v:
-            dest = Path(v.strip().strip("'\"")).expanduser()
+        if auto or assume_yes:
+            dest = default_dest          # 无人值守：用默认，绝不停下来等输入
         else:
-            dest = default_dest
+            print(f"\n\033[36m?\033[0m 文件搬到哪里？")
+            print(f"    直接回车 = 用默认位置 {default_dest}")
+            print(f"    输入 f 回车 = 弹出{'文件夹选择框' if IS_WIN else 'Finder'}自己挑")
+            v = ask("    或直接粘贴一个路径", "")
+            if v.lower() == "f":
+                dest = choose_folder() or default_dest
+            elif v:
+                dest = Path(v.strip().strip("'\"")).expanduser()
+            else:
+                dest = default_dest
 
     custom = load_custom_rules(dest)
 
@@ -453,7 +655,7 @@ def main():
         if allf:
             title("查重 —— 哪些文件你电脑上已经有了")
             roots = ["~/Desktop", "~/Documents", "~/Downloads"]
-            if not auto:
+            if not auto and not assume_yes:
                 extra = ask("除了 桌面/文稿/下载，还要扫哪些目录？(逗号分隔，回车跳过)", "")
                 roots += [x.strip() for x in extra.split(",") if x.strip()]
             print("  建索引中…", flush=True)
@@ -503,24 +705,18 @@ def main():
     keep_dir = dest / "✅ 我要留的"
     keep_dir.mkdir(exist_ok=True)
     (keep_dir / "_把想留的文件拖进来.txt").write_text(
-        "把你决定长期保留的文件从「⚠️ 待清理_日期」里拖到这个文件夹。\n"
+        "把你决定长期保留的文件，从外面的分类夹里拖到这个文件夹。\n"
         "本工具永远不会碰这里的东西，以后每次整理也不会覆盖它。\n", encoding="utf-8")
 
-    batch_dir = dest / f"⚠️ 待清理_{today:%Y%m%d}"
-    (batch_dir / "_怎么处理这批.txt").write_text(
-        f"""这批文件是 {today} 从微信里搬出来的（{keep} 个月前的）
-
-【怎么处理】
-1. 视频基本可以全删 —— 群里转发的东西，你多半不会再看
-2. 文档挑出想留的，拖进上一层的「✅ 我要留的」文件夹
-3. 剩下的连同这个「⚠️ 待清理_{today:%Y%m%d}」文件夹整个删掉
-
-【删掉会怎样】
-· 聊天记录的文字一条都不会少
-· 只是以后在微信里点那个文件，会提示「已过期或已被清理」
-· 这些文件在腾讯服务器上通常也早就过期，本来就点不开
-
-【🔴 删完发现空间没释放？这是最常见的困惑】
+    if IS_WIN:
+        space_help = """【🔴 删完发现空间没释放？】
+1. 回收站没清空 —— 你删掉的还在里面躺着。右键回收站 → 清空。
+2. 目标文件夹和微信数据在同一个盘 —— 搬运不改变总占用，
+   要真腾出空间，得在挑拣之后把不要的删掉。
+3. 系统还原点 / 卷影副本攥着旧状态：
+   系统属性 → 系统保护 → 配置 → 看「当前使用量」。"""
+    else:
+        space_help = """【🔴 删完发现空间没释放？这是最常见的困惑】
 macOS 的 Time Machine「本地快照」会攥着你删掉的文件不放。
 实测案例：删了 35GB 只回血 29GB，删了 17GB 只回血 5.7GB，
 有台机器上快照一个人锁了 620GB。
@@ -533,7 +729,22 @@ macOS 的 Time Machine「本地快照」会攥着你删掉的文件不放。
 
 想彻底关掉自动快照（前提：你没在用 Time Machine 定时备份）：
     系统设置 → 通用 → 时间机器 → 关闭自动备份
-    （命令行 `sudo tmutil disable` 需要「完全磁盘访问权限」，通常走界面更快）
+    （命令行 `sudo tmutil disable` 需要「完全磁盘访问权限」，通常走界面更快）"""
+
+    (dest / "_怎么处理这些文件.txt").write_text(
+        f"""这些文件是 {today} 从微信里搬出来的（{keep} 个月前的）
+
+【怎么处理】
+1. 视频基本可以全删 —— 群里转发的东西，你多半不会再看
+2. 文档挑出想留的，拖进「✅ 我要留的」文件夹
+3. 剩下的按分类夹整个删掉
+
+【删掉会怎样】
+· 聊天记录的文字一条都不会少
+· 只是以后在微信里点那个文件，会提示「已过期或已被清理」
+· 这些文件在腾讯服务器上通常也早就过期，本来就点不开
+
+{space_help}
 
 本次搬运：{tn} 个文件，{human(ts)}
 工具：小耳微信清扫器 v{VERSION}
@@ -546,9 +757,9 @@ macOS 的 Time Machine「本地快照」会攥着你删掉的文件不放。
         notify("微信文件待整理",
                f"已整理 {tn} 个文件（{human(ts)}）到 {dest.name}，有空去挑挑删删")
     else:
-        subprocess.run(["open", str(dest)], capture_output=True)
+        reveal(dest)
         print("\n微信会一直往电脑里存新文件。过阵子觉得又满了，再打开一次就行 ——")
-        print("还是搬到这里，新的一批单独归档，不会跟这次的混在一起。")
+        print("还是搬到这里，并进同一套分类夹；重名不会覆盖，按时间排序就知道哪些是新的。")
 
     print("\n🎉 搞定。\n")
 
