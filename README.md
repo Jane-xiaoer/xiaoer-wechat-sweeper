@@ -1,5 +1,19 @@
 # 👂 小耳微信清扫器
 
+<p align="center">
+  <a href="https://github.com/Jane-xiaoer/xiaoer-wechat-sweeper/releases/latest">
+    <img src="https://img.shields.io/badge/⬇%20下载最新版-macOS%20·%20免费-2F6B4F?style=for-the-badge&logoColor=white" alt="下载最新版">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Jane-xiaoer/xiaoer-wechat-sweeper/releases/latest"><img src="https://img.shields.io/github/v/release/Jane-xiaoer/xiaoer-wechat-sweeper?color=2F6B4F&label=最新版本" alt="最新版本"></a>
+  <img src="https://img.shields.io/github/downloads/Jane-xiaoer/xiaoer-wechat-sweeper/total?color=C1913F&label=下载量" alt="下载量">
+  <img src="https://img.shields.io/badge/已通过-Apple%20公证-37517B" alt="Apple 公证">
+  <img src="https://img.shields.io/badge/依赖-零-6E675C" alt="零依赖">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Jane-xiaoer/xiaoer-wechat-sweeper?color=AE4B32&label=许可" alt="许可"></a>
+</p>
+
 各个群里发的文件，微信默默存在你电脑上，你根本找不到在哪。
 
 小耳微信清扫器帮你翻出来 —— 电脑里已有的、自己重复的，先剔掉；剩下的分好类。
@@ -12,6 +26,13 @@
 
 > **v2.2.0 水彩宣纸版**：全新粉绿水彩界面、繁体排版、毛笔滑杆与墨色切换动效；
 > 应用图标同步换成水彩耳朵与红扫帚。
+
+<p align="center">
+  <img src="assets/screenshot-scan.jpg" width="49%" alt="扫描：微信在你电脑上占了多少">
+  <img src="assets/screenshot-keep.jpg" width="49%" alt="选择：最近的文件要留多久">
+</p>
+
+<p align="center"><sub>左：一打开就告诉你占了多少　·　右：拖毛笔滑杆决定留多久（图中数字为示意）</sub></p>
 
 ---
 
