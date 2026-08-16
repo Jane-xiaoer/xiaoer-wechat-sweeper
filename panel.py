@@ -181,6 +181,57 @@ def do_run(keep, dest, use_dedup):
         STATE.update(running=False, done=True)
 
 
+# ── 简转繁 ──────────────────────────────────────────────
+# 只用于「显示」：界面文案、接口回给前端的分类名与进度文案。
+# 硬盘上的文件夹名一律保持简体（wechat_cleaner.py 里那套），
+# 免得用户已经清扫过的目录旁边又冒出一套繁体夹子。
+TRAD = {
+    "扫": "掃", "电": "電", "脑": "腦", "占": "佔",
+    "还": "還", "过": "過", "里": "裡", "发": "發",
+    "个": "個", "说": "說", "现": "現", "开": "開",
+    "动": "動", "这": "這", "么": "麼", "夹": "夾",
+    "复": "複", "归": "歸", "类": "類", "录": "錄",
+    "机": "機", "从": "從", "实": "實", "体": "體",
+    "号": "號", "认": "認", "筛": "篩", "单": "單",
+    "后": "後", "应": "應", "删": "刪", "误": "誤",
+    "总": "總", "盘": "盤", "统": "統", "网": "網",
+    "连": "連", "话": "話", "记": "記", "图": "圖",
+    "见": "見", "终": "終", "条": "條", "给": "給",
+    "别": "別", "进": "進", "关": "關", "标": "標",
+    "间": "間", "线": "線", "压": "壓", "缩": "縮",
+    "东": "東", "们": "們", "价": "價", "会": "會",
+    "余": "餘", "净": "淨", "几": "幾", "吗": "嗎",
+    "响": "響", "块": "塊", "处": "處", "并": "並",
+    "拣": "揀", "换": "換", "数": "數", "时": "時",
+    "杂": "雜", "来": "來", "档": "檔", "没": "沒",
+    "炉": "爐", "点": "點", "独": "獨", "监": "監",
+    "着": "著", "确": "確", "经": "經", "结": "結",
+    "联": "聯", "规": "規", "视": "視", "计": "計",
+    "议": "議", "该": "該", "请": "請", "转": "轉",
+    "轮": "輪", "载": "載", "运": "運", "选": "選",
+    "释": "釋", "钮": "鈕", "顶": "頂", "项": "項",
+    "频": "頻", "骤": "驟",
+    # 分类名要用的：视频/文档/简历/合同与表单/课件与教程/书籍/报告与白皮书/代码/安装包
+    "简": "簡", "历": "歷", "与": "與", "课": "課",
+    "书": "書", "报": "報", "码": "碼", "装": "裝",
+    "据": "據", "错": "錯",
+}
+_TRAD_TABLE = str.maketrans(TRAD)
+# 一简对多繁的，先按词组定死再逐字转：
+# 「干净」的「干」在台湾是「乾」，单字表会转成「幹淨」。
+# 「台」保留不转 —— 「一台機器」比「一臺機器」自然。
+TRAD_WORDS = (("干净", "乾淨"),)
+
+
+def to_tw(text):
+    """把一段文字转成繁体显示。只碰文案，别拿它处理路径。"""
+    if not text:
+        return text
+    for zh, tw in TRAD_WORDS:
+        text = text.replace(zh, tw)
+    return text.translate(_TRAD_TABLE)
+
+
 class H(BaseHTTPRequestHandler):
     def _send(self, obj, ctype="application/json"):
         body = (json.dumps(obj, ensure_ascii=False).encode()
@@ -195,39 +246,7 @@ class H(BaseHTTPRequestHandler):
         route = self.path.split("?", 1)[0]
         if route in ("/", "/index.html", "/watercolor", "/watercolor/"):
             html = (HERE / "panel.html").read_text(encoding="utf-8")
-            traditional = {
-                "扫": "掃", "电": "電", "脑": "腦", "占": "佔",
-                "还": "還", "过": "過", "里": "裡", "发": "發",
-                "个": "個", "说": "說", "现": "現", "开": "開",
-                "动": "動", "这": "這", "么": "麼", "夹": "夾",
-                "复": "複", "归": "歸", "类": "類", "录": "錄",
-                "机": "機", "从": "從", "实": "實", "体": "體",
-                "号": "號", "认": "認", "筛": "篩", "单": "單",
-                "后": "後", "应": "應", "删": "刪", "误": "誤",
-                "总": "總", "盘": "盤", "统": "統", "网": "網",
-                "连": "連", "话": "話", "记": "記", "图": "圖",
-                "见": "見", "终": "終", "条": "條", "给": "給",
-                "别": "別", "进": "進", "关": "關", "标": "標",
-                "间": "間", "线": "線", "压": "壓", "缩": "縮",
-                "东": "東", "们": "們", "价": "價", "会": "會",
-                "余": "餘", "净": "淨", "几": "幾", "吗": "嗎",
-                "响": "響", "块": "塊", "处": "處", "并": "並",
-                "拣": "揀", "换": "換", "数": "數", "时": "時",
-                "杂": "雜", "来": "來", "档": "檔", "没": "沒",
-                "炉": "爐", "点": "點", "独": "獨", "监": "監",
-                "着": "著", "确": "確", "经": "經", "结": "結",
-                "联": "聯", "规": "規", "视": "視", "计": "計",
-                "议": "議", "该": "該", "请": "請", "转": "轉",
-                "轮": "輪", "载": "載", "运": "運", "选": "選",
-                "释": "釋", "钮": "鈕", "顶": "頂", "项": "項",
-                "频": "頻", "骤": "驟",
-            }
-            # 一简对多繁的，先按词组定死再逐字转：
-            # 「干净」的「干」在台湾是「乾」，单字表会转成「幹淨」。
-            # 「台」保留不转 —— 「一台機器」比「一臺機器」自然。
-            for zh_word, tw_word in (("干净", "乾淨"),):
-                html = html.replace(zh_word, tw_word)
-            html = html.translate(str.maketrans(traditional))
+            html = to_tw(html)
             html = html.replace("🧹 開始清理", "開始清掃")
             html = html.replace("下一步 →", "下一步　›")
             html = html.replace("開始清掃 →", "開始清掃　›")
@@ -322,7 +341,10 @@ class H(BaseHTTPRequestHandler):
                     keep = int(self.path.split("keep=")[1].split("&")[0])
                 except ValueError:
                     pass
-            self._send(scan_payload(keep))
+            payload = scan_payload(keep)
+            if payload.get("error"):
+                payload["error"] = to_tw(payload["error"])
+            self._send(payload)
         elif self.path.startswith("/api/open"):
             import urllib.parse
             q = urllib.parse.urlparse(self.path).query
@@ -333,9 +355,18 @@ class H(BaseHTTPRequestHandler):
         elif self.path == "/api/pick":
             self._send({"path": pick_folder()})
         elif self.path == "/api/status":
+            detail = STATE.get("detail") or ""
+            # 报错信息保持原样：里面可能带着真实路径，转成繁体会误导人去找
+            if not detail.startswith("出错"):
+                detail = to_tw(detail)
+            res = STATE.get("result")
+            if res:
+                res = dict(res)
+                # 只翻分类名。dest 是硬盘上的真实路径，一个字都不能动
+                res["buckets"] = [[to_tw(k), v] for k, v in res.get("buckets", [])]
             self._send({"running": STATE["running"], "done": STATE["done"],
-                        "stage": STATE.get("stage"), "detail": STATE.get("detail"),
-                        "result": STATE.get("result")})
+                        "stage": STATE.get("stage"), "detail": detail,
+                        "result": res})
         elif self.path == "/api/snapshots":
             # Time Machine 本地快照是 macOS 独有的坑，Windows 没这回事
             if IS_WIN:
