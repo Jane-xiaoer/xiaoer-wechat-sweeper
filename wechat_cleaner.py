@@ -18,7 +18,6 @@
 作者：小耳 (Xiaoer)  ·  MIT License
 """
 
-import os
 import re
 import sys
 import json
@@ -217,64 +216,6 @@ def category_of(name: str, custom=None) -> str:
     return "📎 杂项"
 
 
-# ═══════════════ 3. 定时任务 ═══════════════
-PLIST = """<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>{label}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{python}</string>
-        <string>{script}</string>
-        <string>--auto</string>
-        <string>--months</string><string>{months}</string>
-        <string>--dest</string><string>{dest}</string>
-    </array>
-    <key>StartCalendarInterval</key>
-    <array>
-{times}
-    </array>
-    <key>StandardOutPath</key><string>{log}</string>
-    <key>StandardErrorPath</key><string>{log}</string>
-    <key>RunAtLoad</key><false/>
-</dict>
-</plist>
-"""
-
-
-def install_schedule(every_months: int, keep: int, dest: Path) -> bool:
-    label = "com.xiaoer.wechat-sweeper"
-    script = Path(__file__).resolve()
-    plist_path = Path.home() / f"Library/LaunchAgents/{label}.plist"
-    plist_path.parent.mkdir(parents=True, exist_ok=True)
-
-    times = "".join(
-        f"        <dict><key>Month</key><integer>{m}</integer>"
-        f"<key>Day</key><integer>1</integer>"
-        f"<key>Hour</key><integer>10</integer>"
-        f"<key>Minute</key><integer>0</integer></dict>\n"
-        for m in range(1, 13, every_months)
-    )
-    plist_path.write_text(PLIST.format(
-        label=label, python=sys.executable, script=script, months=keep,
-        dest=str(dest), times=times,
-        log=f"/tmp/{label}.log"), encoding="utf-8")
-
-    uid = os.getuid()
-    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
-                   capture_output=True)
-    r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)],
-                       capture_output=True, text=True)
-    if r.returncode == 0:
-        print(f"  ✅ 定时任务已装：每 {every_months} 个月的 1 号 10:00 自动运行")
-        print(f"     配置文件 {plist_path}")
-        print(f"     想取消：launchctl bootout gui/{uid}/{label}")
-        return True
-    print(f"  ⚠️ 安装失败：{r.stderr.strip()[:160]}")
-    return False
-
-
 def notify(title_: str, body: str):
     """建一条提醒事项；失败就退回横幅通知"""
     esc = lambda s: s.replace('"', "'")
@@ -304,7 +245,7 @@ USAGE = """
     --dest X    文件搬到哪里
     --months N  保留最近 N 个月不动（默认 3）
     --yes       跳过确认（agent 已代用户确认过才用）
-    --auto      定时任务模式：全自动 + 建提醒事项\n    --no-dedup  跳过查重（默认会查：很多文件你电脑上早就有了）\n    --check-space  删完空间没释放时用：查 Time Machine 本地快照
+    --auto      全自动：不提问、不开窗，完事建一条提醒事项\n    --no-dedup  跳过查重（默认会查：很多文件你电脑上早就有了）\n    --check-space  删完空间没释放时用：查 Time Machine 本地快照
 """
 
 
@@ -415,7 +356,7 @@ def main():
         print("❌ 这个工具只适用于 macOS")
         sys.exit(1)
 
-    auto = "--auto" in sys.argv          # 定时任务用：全自动，不问不开窗
+    auto = "--auto" in sys.argv          # 全自动：不问不开窗，给脚本/助手调用用
     scan_only = "--scan" in sys.argv     # 只扫描，不动任何文件
     as_json = "--json" in sys.argv       # 结构化输出，给 AI agent 解析
     assume_yes = "--yes" in sys.argv     # 跳过确认，agent 已代用户确认过
@@ -606,16 +547,8 @@ macOS 的 Time Machine「本地快照」会攥着你删掉的文件不放。
                f"已整理 {tn} 个文件（{human(ts)}）到 {dest.name}，有空去挑挑删删")
     else:
         subprocess.run(["open", str(dest)], capture_output=True)
-
-        # ⑦ 定期任务
-        title("要不要定期自动做这件事？")
-        print("  微信会一直往电脑里存新文件，不管的话过阵子又堆起来。")
-        if yes("  设置定期自动整理？", True):
-            every = int(ask("  隔几个月跑一次", "3"))
-            if 12 % every:
-                print(f"  ⚠️ {every} 不能整除 12，改用 3")
-                every = 3
-            install_schedule(every, keep, dest)
+        print("\n微信会一直往电脑里存新文件。过阵子觉得又满了，再打开一次就行 ——")
+        print("还是搬到这里，新的一批单独归档，不会跟这次的混在一起。")
 
     print("\n🎉 搞定。\n")
 
