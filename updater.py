@@ -38,3 +38,51 @@ def current_version():
         return (HERE / "VERSION").read_text(encoding="utf-8").strip()
     except OSError:
         return "0.0.0"
+
+
+def _fetch_json(url, timeout):
+    """单独一层，方便测试替换掉，不用真联网"""
+    import urllib.request
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "xiaoer-wechat-cleaner",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def pick_asset(assets, is_win):
+    """mac 要不带 -Windows 的那个 zip，Windows 要带的那个"""
+    for a in assets or []:
+        name = a.get("name") or ""
+        if not name.endswith(".zip"):
+            continue
+        if ("-Windows" in name) == bool(is_win):
+            return a
+    return None
+
+
+def check(timeout=3):
+    """问 GitHub 有没有新版。
+
+    3 秒超时是硬上限：GitHub API 在国内经常慢，超时就当没有新版，
+    下次打开再说，绝不让用户干等。
+    任何异常都返回 None——「查不到」和「没新版」对调用方是同一件事。
+    """
+    try:
+        data = _fetch_json(API, timeout)
+        remote = str(data["tag_name"]).lstrip("v")
+        if parse_version(remote) <= parse_version(current_version()):
+            return None
+        asset = pick_asset(data.get("assets"), is_win())
+        if not asset:
+            return None
+        return {
+            "version": remote,
+            "notes": data.get("body") or "",
+            "url": asset["browser_download_url"],
+            "sha256": (asset.get("digest") or "").replace("sha256:", ""),
+            "size": asset.get("size") or 0,
+        }
+    except Exception:
+        return None

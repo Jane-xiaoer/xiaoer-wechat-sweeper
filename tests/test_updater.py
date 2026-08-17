@@ -34,5 +34,76 @@ class TestCurrentVersion(unittest.TestCase):
         self.assertRegex(v, r"^\d+\.\d+\.\d+$")
 
 
+ASSETS = [
+    {"name": "Xiaoer-WeChat-Cleaner-v2.3.0-Windows.zip",
+     "browser_download_url": "https://example.com/win.zip",
+     "digest": "sha256:aaa", "size": 5252136},
+    {"name": "Xiaoer-WeChat-Cleaner-v2.3.0.zip",
+     "browser_download_url": "https://example.com/mac.zip",
+     "digest": "sha256:bbb", "size": 8160192},
+]
+
+
+class TestPickAsset(unittest.TestCase):
+    def test_mac_挑不带_Windows_的那个(self):
+        a = updater.pick_asset(ASSETS, is_win=False)
+        self.assertEqual(a["browser_download_url"], "https://example.com/mac.zip")
+
+    def test_win_挑带_Windows_的那个(self):
+        a = updater.pick_asset(ASSETS, is_win=True)
+        self.assertEqual(a["browser_download_url"], "https://example.com/win.zip")
+
+    def test_没有匹配的返回_None(self):
+        self.assertIsNone(updater.pick_asset([], is_win=False))
+
+    def test_忽略非_zip_资产(self):
+        only_txt = [{"name": "notes.txt", "browser_download_url": "x",
+                     "digest": "", "size": 1}]
+        self.assertIsNone(updater.pick_asset(only_txt, is_win=False))
+
+
+class TestCheck(unittest.TestCase):
+    """check() 的铁律：任何异常都返回 None，绝不向上抛。"""
+
+    def _fake_api(self, payload):
+        """把 _fetch_json 换成固定返回，避免测试联网"""
+        original = updater._fetch_json
+        updater._fetch_json = lambda url, timeout: payload
+        self.addCleanup(lambda: setattr(updater, "_fetch_json", original))
+
+    def test_有新版返回信息(self):
+        self._fake_api({"tag_name": "v99.0.0", "body": "更新说明",
+                        "assets": ASSETS})
+        got = updater.check()
+        self.assertEqual(got["version"], "99.0.0")
+        self.assertEqual(got["notes"], "更新说明")
+        self.assertEqual(got["sha256"], "bbb")     # 去掉 sha256: 前缀
+
+    def test_已是最新返回_None(self):
+        self._fake_api({"tag_name": "v0.0.1", "body": "", "assets": ASSETS})
+        self.assertIsNone(updater.check())
+
+    def test_同版本不更新(self):
+        self._fake_api({"tag_name": "v" + updater.current_version(),
+                        "body": "", "assets": ASSETS})
+        self.assertIsNone(updater.check())
+
+    def test_网络异常返回_None(self):
+        def boom(url, timeout):
+            raise OSError("网络不通")
+        original = updater._fetch_json
+        updater._fetch_json = boom
+        self.addCleanup(lambda: setattr(updater, "_fetch_json", original))
+        self.assertIsNone(updater.check())
+
+    def test_畸形_JSON_返回_None(self):
+        self._fake_api({"没有": "tag_name"})
+        self.assertIsNone(updater.check())
+
+    def test_有新版但没有本平台资产返回_None(self):
+        self._fake_api({"tag_name": "v99.0.0", "body": "", "assets": []})
+        self.assertIsNone(updater.check())
+
+
 if __name__ == "__main__":
     unittest.main()
