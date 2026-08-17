@@ -29,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import wechat_cleaner as wc          # noqa: E402
 import updater                       # noqa: E402
+import settings                      # noqa: E402
 try:
     import dedup as _dedup           # noqa: E402
 except ImportError:
@@ -37,9 +38,18 @@ except ImportError:
 STATE = {"running": False, "done": False, "dest": None,
          "stage": 0, "detail": "", "result": None}
 
-# 更新状态。main() 里检测到新版才会填 info，
+# 更新状态。check_update_async 查到新版才会填 info，
 # do_GET 靠它判断 / 该给面板还是给更新页。
 UPDATE = {"info": None, "state": "idle", "percent": 0}
+
+# 查更新有没有结论了。查更新要联网，而 GitHub 在国内常年不通，
+# 绝不能挡在启动路径上：AppleScript 壳启动完就退出、Dock 图标随即消失，
+# 这时候面板还没起来的话，用户就是盯着空气——看着跟闪退一模一样。
+UPDATE_CHECKED = threading.Event()
+# 首页最多等这么久拿结论，等不到就先给正常面板（这次就不更新了，下次再说）。
+# 2 秒是拿实测配的：网通的时候查一次只要 0.8-1.1 秒，够用；
+# 网不通的时候白屏也就一秒多，不至于让人以为卡死。
+UPDATE_WAIT = 2
 
 
 def log(msg):
@@ -68,7 +78,10 @@ def scan_payload(keep=3):
                 expired += sz
         kinds[kind] = {"months": months,
                        "total": wc.human(sum(r[3] for r in rows))}
-    dest_guess = Path(STATE.get("dest") or (Path.home() / "Desktop/微信文件整理"))
+    # 优先本次会话里选过的，其次上次用过的，最后才是默认位置
+    dest_guess = Path(STATE.get("dest")
+                      or settings.get_last_dest()
+                      or (Path.home() / "Desktop/微信文件整理"))
     rec = wc.read_record(dest_guess)
     return {"ok": True, "account": acc.name, "kinds": kinds,
             "total": wc.human(total), "expired": wc.human(expired),
@@ -135,6 +148,7 @@ def do_run(keep, dest, use_dedup):
 
         d = Path(dest).expanduser()
         d.mkdir(parents=True, exist_ok=True)
+        settings.set_last_dest(d)     # 真搬到这儿了，下次打开默认还用它
         custom = wc.load_custom_rules(d)
 
         allf = [f for rows in picked.values() for _y, _m, src, _s, _c in rows
@@ -250,6 +264,9 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         route = self.path.split("?", 1)[0]
         if route in ("/", "/index.html", "/watercolor", "/watercolor/"):
+            # 硬超时：就算查更新那条线卡死（DNS 挂起时 urlopen 的 timeout
+            # 管不住），到点也得放行，先把面板给用户
+            UPDATE_CHECKED.wait(UPDATE_WAIT)
             if UPDATE["info"]:
                 self._send((HERE / "updating.html").read_bytes(), "text/html")
                 return
@@ -361,7 +378,12 @@ class H(BaseHTTPRequestHandler):
                 reveal(Path(tgt).expanduser())
             self._send({"ok": True})
         elif self.path == "/api/pick":
-            self._send({"path": pick_folder()})
+            picked = pick_folder()
+            if picked:
+                # 选完当场就记，不等真跑完——选了却没跑就关掉的话，
+                # 下次打开还得重选一遍，那正是这功能要省掉的麻烦
+                settings.set_last_dest(picked)
+            self._send({"path": picked})
         elif self.path == "/api/update/status":
             self._send({"version": (UPDATE["info"] or {}).get("version", ""),
                         "state": UPDATE["state"],
@@ -460,13 +482,28 @@ def do_update(info):
     UPDATE["percent"] = 100 if ok else 0
 
 
+def check_update_async():
+    """后台查更新。查不到、超时、抛异常都当没有新版——
+    永远要 set 那个 Event，否则首页会一直干等到超时。"""
+    try:
+        info = updater.check(timeout=3)
+        if info:
+            UPDATE["info"] = info
+            UPDATE["state"] = "downloading"
+    except Exception:
+        pass
+    finally:
+        UPDATE_CHECKED.set()
+    if UPDATE["info"]:
+        do_update(UPDATE["info"])
+
+
 def main():
     updater.rollback_if_needed()      # 上次替换半途崩了就先救回来
 
-    info = updater.check(timeout=3)   # 查不到、超时、没新版都返回 None
-    if info:
-        UPDATE["info"] = info
-        UPDATE["state"] = "downloading"
+    # 查更新放后台，不挡启动。挡在这儿的话，网络不通时用户双击后
+    # 要盯着空气等好几秒，而 Dock 图标早就没了——那看着就是闪退。
+    threading.Thread(target=check_update_async, daemon=True).start()
 
     s = socket.socket()
     s.bind(("127.0.0.1", 0))          # 让系统挑个空闲端口，避免撞上别的服务
@@ -478,9 +515,6 @@ def main():
     print("   浏览器应该会自动打开。用完关掉这个终端窗口即可。\n")
     threading.Thread(target=lambda: (time.sleep(0.6), open_ui(url)),
                      daemon=True).start()
-
-    if info:
-        threading.Thread(target=lambda: do_update(info), daemon=True).start()
 
     try:
         srv.serve_forever()
