@@ -6,7 +6,10 @@
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -129,3 +132,138 @@ def app_bundle_path():
         if p.suffix == ".app":
             return p
     return None
+
+
+def _run(cmd):
+    """跑命令，返回 (returncode, stdout+stderr)。
+    codesign -dv 把信息写在 stderr，所以两股合并。"""
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return p.returncode, p.stdout.decode("utf-8", "replace")
+
+
+def verify_app(app_path):
+    """三关：签名完整 → 确实是我们签的 → 公证有效。
+
+    返回 (通过与否, 原因)。原因只用于日志，不给用户看——
+    静默更新不该拿这种细节打扰人。
+    """
+    app_path = str(app_path)
+
+    rc, out = _run(["codesign", "--verify", "--deep", "--strict", app_path])
+    if rc != 0:
+        return False, "签名不完整"
+
+    rc, out = _run(["codesign", "-dv", "--verbose=4", app_path])
+    tid = parse_team_id(out)
+    if tid != TEAM_ID:
+        return False, "签名方不是我们（TeamID=%s）" % tid
+
+    rc, out = _run(["spctl", "-a", "-t", "execute", app_path])
+    if rc != 0:
+        return False, "公证校验没过"
+
+    return True, ""
+
+
+def _download(url, dest, on_state=None):
+    """下载到 dest。失败返回 False，不抛。"""
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "xiaoer-wechat-cleaner"})
+        with urllib.request.urlopen(req, timeout=30) as r, open(dest, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            done = 0
+            while True:
+                chunk = r.read(1 << 18)
+                if not chunk:
+                    break
+                f.write(chunk)
+                done += len(chunk)
+                if on_state and total:
+                    on_state("downloading", int(done * 100 / total))
+        return True
+    except Exception:
+        return False
+
+
+def _old_path(app_path):
+    """Path.with_suffix 会把 '小耳微信清扫器.app' 变成 '小耳微信清扫器.old'，
+    丢掉 .app 后缀，所以直接拼字符串。"""
+    return Path(str(app_path) + ".old")
+
+
+def rollback_if_needed():
+    """上次替换半途崩了的话，靠 .old 救回来。启动时调一次。"""
+    app = app_bundle_path()
+    if not app:
+        return False
+    old = _old_path(app)
+    if not old.exists():
+        return False
+    if not app.exists():
+        old.rename(app)
+        return True
+    shutil.rmtree(str(old), ignore_errors=True)   # 主体还在，残留直接清掉
+    return False
+
+
+def install(info, on_state=None):
+    """下载 → 验证 → 替换。任何一步不对就中止，一个字节都不写进 /Applications。"""
+    app = app_bundle_path()
+    if not app or not os.access(str(app.parent), os.W_OK):
+        return False        # 跑源码，或装在没写权限的地方——静默跳过
+
+    work = Path(tempfile.mkdtemp(prefix="xiaoer-update-"))
+    try:
+        zip_path = work / "update.zip"
+        if not _download(info["url"], zip_path, on_state):
+            return False
+
+        if on_state:
+            on_state("verifying", 0)
+        if info.get("sha256") and sha256_of(zip_path) != info["sha256"]:
+            return False
+
+        stage = work / "stage"
+        stage.mkdir()
+        rc, _ = _run(["ditto", "-x", "-k", str(zip_path), str(stage)])
+        if rc != 0:
+            return False
+
+        new_apps = list(stage.glob("*.app"))
+        if len(new_apps) != 1:
+            return False
+        ok, _why = verify_app(new_apps[0])
+        if not ok:
+            return False
+
+        old = _old_path(app)
+        shutil.rmtree(str(old), ignore_errors=True)
+        app.rename(old)                       # 先挪开，崩了还能靠它救回
+        rc, _ = _run(["ditto", str(new_apps[0]), str(app)])
+        if rc != 0:
+            old.rename(app)                   # 就位失败，立刻回滚
+            return False
+        shutil.rmtree(str(old), ignore_errors=True)
+        return True
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(str(work), ignore_errors=True)
+
+
+def restart():
+    """重开 app，当前进程立刻退出。用 os._exit 是因为 HTTP server
+    还在别的线程里 serve_forever，正常 return 回不到主循环。"""
+    app = app_bundle_path()
+    try:
+        if app:
+            subprocess.Popen(["open", "-a", str(app)])
+        elif is_win():
+            bat = HERE / "小耳微信清扫器.bat"
+            subprocess.Popen(["cmd", "/c", "start", "", str(bat)],
+                             creationflags=0x00000008)   # DETACHED_PROCESS
+    except Exception:
+        pass
+    os._exit(0)
