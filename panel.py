@@ -28,6 +28,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import wechat_cleaner as wc          # noqa: E402
+import updater                       # noqa: E402
 try:
     import dedup as _dedup           # noqa: E402
 except ImportError:
@@ -35,6 +36,10 @@ except ImportError:
 
 STATE = {"running": False, "done": False, "dest": None,
          "stage": 0, "detail": "", "result": None}
+
+# 更新状态。main() 里检测到新版才会填 info，
+# do_GET 靠它判断 / 该给面板还是给更新页。
+UPDATE = {"info": None, "state": "idle", "percent": 0}
 
 
 def log(msg):
@@ -245,6 +250,9 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         route = self.path.split("?", 1)[0]
         if route in ("/", "/index.html", "/watercolor", "/watercolor/"):
+            if UPDATE["info"]:
+                self._send((HERE / "updating.html").read_bytes(), "text/html")
+                return
             html = (HERE / "panel.html").read_text(encoding="utf-8")
             html = to_tw(html)
             html = html.replace("🧹 開始清理", "開始清掃")
@@ -354,6 +362,19 @@ class H(BaseHTTPRequestHandler):
             self._send({"ok": True})
         elif self.path == "/api/pick":
             self._send({"path": pick_folder()})
+        elif self.path == "/api/update/status":
+            self._send({"version": (UPDATE["info"] or {}).get("version", ""),
+                        "state": UPDATE["state"],
+                        "percent": UPDATE["percent"]})
+        elif self.path == "/api/update/restart":
+            if UPDATE["state"] == "done":
+                threading.Thread(target=updater.restart, daemon=True).start()
+                self._send({"ok": True})
+            else:
+                UPDATE["info"] = None          # 更新失败，放行回正常面板
+                self.send_response(302)
+                self.send_header("Location", "/")
+                self.end_headers()
         elif self.path == "/api/status":
             detail = STATE.get("detail") or ""
             # 报错信息保持原样：里面可能带着真实路径，转成繁体会误导人去找
@@ -428,17 +449,39 @@ def open_ui(url):
     webbrowser.open(url)
 
 
+def do_update(info):
+    """后台装。装成了让前端跳 /api/update/restart 触发重开，
+    装不成就把状态标 failed，前端会放行回正常面板。"""
+    def on_state(state, percent):
+        UPDATE["state"] = state
+        UPDATE["percent"] = percent
+    ok = updater.install(info, on_state)
+    UPDATE["state"] = "done" if ok else "failed"
+    UPDATE["percent"] = 100 if ok else 0
+
+
 def main():
+    updater.rollback_if_needed()      # 上次替换半途崩了就先救回来
+
+    info = updater.check(timeout=3)   # 查不到、超时、没新版都返回 None
+    if info:
+        UPDATE["info"] = info
+        UPDATE["state"] = "downloading"
+
     s = socket.socket()
     s.bind(("127.0.0.1", 0))          # 让系统挑个空闲端口，避免撞上别的服务
     port = s.getsockname()[1]
     s.close()
     srv = HTTPServer(("127.0.0.1", port), H)
     url = f"http://127.0.0.1:{port}/"
-    print(f"\n👂 小耳微信清扫器 · 面板已启动\n   {url}")
+    print(f"\n👂 小耳微信清扫器 v{updater.current_version()} · 面板已启动\n   {url}")
     print("   浏览器应该会自动打开。用完关掉这个终端窗口即可。\n")
     threading.Thread(target=lambda: (time.sleep(0.6), open_ui(url)),
                      daemon=True).start()
+
+    if info:
+        threading.Thread(target=lambda: do_update(info), daemon=True).start()
+
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
