@@ -94,5 +94,49 @@ class TestBroken(Base):
         self.assertIsNone(settings.get_last_dest())
 
 
+class TestPrefs(Base):
+    """除了文件夹，面板上还有两样用户会调的：留几个月的滑杆、先查重的勾选"""
+
+    def test_没存过时给出厂值(self):
+        p = settings.get_prefs()
+        self.assertEqual(p["keep"], 1)
+        self.assertTrue(p["dedup"])
+
+    def test_存了能取回来(self):
+        settings.set_prefs(keep=6, dedup=False)
+        p = settings.get_prefs()
+        self.assertEqual(p["keep"], 6)
+        self.assertFalse(p["dedup"])
+
+    def test_一个不留也要记住(self):
+        """keep=0 是合法值（微信里一个都不留），别被当成空值丢掉"""
+        settings.set_prefs(keep=0, dedup=True)
+        self.assertEqual(settings.get_prefs()["keep"], 0)
+
+    def test_超范围的值夹回去(self):
+        """滑杆是 0-12，配置文件被手改坏了也不能让面板显示成乱的"""
+        settings.set_prefs(keep=999, dedup=True)
+        self.assertEqual(settings.get_prefs()["keep"], 12)
+        settings.set_prefs(keep=-5, dedup=True)
+        self.assertEqual(settings.get_prefs()["keep"], 0)
+
+    def test_脏数据回退到出厂值(self):
+        d = settings._config_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "settings.json").write_text('{"keep": "六个月", "dedup": "是"}',
+                                         encoding="utf-8")
+        p = settings.get_prefs()
+        self.assertEqual(p["keep"], 1)
+        self.assertTrue(p["dedup"])
+
+    def test_跟文件夹互不干扰(self):
+        target = self.tmp / "目标"
+        target.mkdir()
+        settings.set_last_dest(target)
+        settings.set_prefs(keep=9, dedup=False)
+        self.assertEqual(settings.get_last_dest(), str(target))
+        self.assertEqual(settings.get_prefs()["keep"], 9)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,3 +62,38 @@ def set_last_dest(path):
     if not path:
         return False
     return save(last_dest=str(path))
+
+
+# 面板上那两样用户会调的东西的出厂值
+DEFAULT_KEEP = 1          # 滑杆「留 1 个月」
+DEFAULT_DEDUP = True      # 勾选「先查重」
+KEEP_MIN, KEEP_MAX = 0, 12
+
+
+def get_prefs():
+    """上次把滑杆拖到哪、查重勾没勾。
+
+    读不出来或者读到脏数据就回出厂值——配置文件是可以被手改坏的，
+    但面板不能因此显示成乱的。
+    """
+    d = load()
+    try:
+        keep = int(d.get("keep", DEFAULT_KEEP))
+    except (TypeError, ValueError):
+        keep = DEFAULT_KEEP
+    keep = max(KEEP_MIN, min(KEEP_MAX, keep))
+
+    dedup = d.get("dedup", DEFAULT_DEDUP)
+    if not isinstance(dedup, bool):
+        dedup = DEFAULT_DEDUP
+
+    return {"keep": keep, "dedup": dedup}
+
+
+def set_prefs(keep, dedup):
+    """keep=0 是合法值（微信里一个都不留），别当成空值丢掉"""
+    try:
+        keep = max(KEEP_MIN, min(KEEP_MAX, int(keep)))
+    except (TypeError, ValueError):
+        return False
+    return save(keep=keep, dedup=bool(dedup))

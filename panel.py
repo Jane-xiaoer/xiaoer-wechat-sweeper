@@ -149,6 +149,7 @@ def do_run(keep, dest, use_dedup):
         d = Path(dest).expanduser()
         d.mkdir(parents=True, exist_ok=True)
         settings.set_last_dest(d)     # 真搬到这儿了，下次打开默认还用它
+        settings.set_prefs(keep, use_dedup)   # 滑杆和查重也照搬上次的
         custom = wc.load_custom_rules(d)
 
         allf = [f for rows in picked.values() for _y, _m, src, _s, _c in rows
@@ -377,6 +378,11 @@ class H(BaseHTTPRequestHandler):
             if tgt:
                 reveal(Path(tgt).expanduser())
             self._send({"ok": True})
+        elif self.path == "/api/prefs":
+            # 面板加载时先问一次上次的选择，拿到了再去 scan
+            p = settings.get_prefs()
+            p["dest"] = settings.get_last_dest() or ""
+            self._send(p)
         elif self.path == "/api/pick":
             picked = pick_folder()
             if picked:

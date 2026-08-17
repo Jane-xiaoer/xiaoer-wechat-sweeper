@@ -299,7 +299,19 @@ async function show(res){
 
 function openDest(){ fetch('/api/open?p='+encodeURIComponent(DEST)); }
 
-go(1); scan();
+// 先把上次的选择填回控件，再扫——否则第一次扫用的是出厂值，
+// 用户会看到滑杆跳一下、数字也跟着变
+async function restorePrefs(){
+  try{
+    const p = await (await fetch('/api/prefs')).json();
+    $('keep').value = p.keep;
+    $('keepv').textContent = p.keep===0 ? '一个不留' : '留 '+p.keep+' 个月';
+    $('dd').checked = p.dedup;
+    if(p.dest){ DEST = p.dest; $('dest').textContent = DEST; }
+  }catch(e){ /* 读不到就用出厂值，不影响使用 */ }
+}
+
+go(1); restorePrefs().then(scan);
 </script>
 </body>
 </html>
