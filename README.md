@@ -51,6 +51,10 @@
 > ✅ **已通过 Apple 公证**（Developer ID + Notarization），下载后直接双击即可，
 > 不会出现「无法验证开发者」的警告。
 
+> **需要电脑上有 Python 3.8+。** 大部分 mac 已经有了（装过 Xcode、
+> Homebrew 或从 python.org 装过的都算）。万一没有，双击时会弹窗告诉你，
+> 并直接把下载页打开 —— 装完再双击一次就行。
+
 <h3 id="windows-怎么用">Windows</h3>
 
 Windows 版**暂时没有打包成 exe**，用源码跑，一样是双击：

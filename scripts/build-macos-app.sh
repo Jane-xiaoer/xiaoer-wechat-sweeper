@@ -31,7 +31,9 @@ mkdir -p "$APP/Contents/Resources/app"
 cp "$ROOT/panel.html" "$ROOT/panel.py" "$ROOT/watercolor-ui.css" \
    "$ROOT/wechat_cleaner.py" "$ROOT/dedup.py" \
    "$ROOT/updater.py" "$ROOT/settings.py" "$ROOT/updating.html" "$ROOT/VERSION" \
+   "$ROOT/launcher.sh" \
    "$APP/Contents/Resources/app/"
+chmod +x "$APP/Contents/Resources/app/launcher.sh"
 mkdir -p "$APP/Contents/Resources/app/assets"
 cp "$ROOT/assets/"*.png "$APP/Contents/Resources/app/assets/"
 cp "$TMP/applet.icns" "$APP/Contents/Resources/applet.icns"
