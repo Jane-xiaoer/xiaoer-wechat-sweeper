@@ -29,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import wechat_cleaner as wc          # noqa: E402
 import updater                       # noqa: E402
+import settings                      # noqa: E402
 try:
     import dedup as _dedup           # noqa: E402
 except ImportError:
@@ -68,7 +69,10 @@ def scan_payload(keep=3):
                 expired += sz
         kinds[kind] = {"months": months,
                        "total": wc.human(sum(r[3] for r in rows))}
-    dest_guess = Path(STATE.get("dest") or (Path.home() / "Desktop/微信文件整理"))
+    # 优先本次会话里选过的，其次上次用过的，最后才是默认位置
+    dest_guess = Path(STATE.get("dest")
+                      or settings.get_last_dest()
+                      or (Path.home() / "Desktop/微信文件整理"))
     rec = wc.read_record(dest_guess)
     return {"ok": True, "account": acc.name, "kinds": kinds,
             "total": wc.human(total), "expired": wc.human(expired),
@@ -135,6 +139,7 @@ def do_run(keep, dest, use_dedup):
 
         d = Path(dest).expanduser()
         d.mkdir(parents=True, exist_ok=True)
+        settings.set_last_dest(d)     # 真搬到这儿了，下次打开默认还用它
         custom = wc.load_custom_rules(d)
 
         allf = [f for rows in picked.values() for _y, _m, src, _s, _c in rows
@@ -361,7 +366,12 @@ class H(BaseHTTPRequestHandler):
                 reveal(Path(tgt).expanduser())
             self._send({"ok": True})
         elif self.path == "/api/pick":
-            self._send({"path": pick_folder()})
+            picked = pick_folder()
+            if picked:
+                # 选完当场就记，不等真跑完——选了却没跑就关掉的话，
+                # 下次打开还得重选一遍，那正是这功能要省掉的麻烦
+                settings.set_last_dest(picked)
+            self._send({"path": picked})
         elif self.path == "/api/update/status":
             self._send({"version": (UPDATE["info"] or {}).get("version", ""),
                         "state": UPDATE["state"],

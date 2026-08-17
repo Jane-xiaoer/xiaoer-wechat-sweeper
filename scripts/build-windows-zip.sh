@@ -15,7 +15,7 @@ mkdir -p "${STAGE}/assets" "${DIST}"
 # Windows 版是源码直接跑，不打包 exe，所以把 app 要用的文件原样拷进去
 cp "${ROOT}/panel.py" "${ROOT}/panel.html" "${ROOT}/watercolor-ui.css" \
    "${ROOT}/wechat_cleaner.py" "${ROOT}/dedup.py" \
-   "${ROOT}/updater.py" "${ROOT}/updating.html" "${ROOT}/VERSION" \
+   "${ROOT}/updater.py" "${ROOT}/settings.py" "${ROOT}/updating.html" "${ROOT}/VERSION" \
    "${STAGE}/"
 cp "${ROOT}/assets/"*.png "${STAGE}/assets/"
 cp "${ROOT}/windows/使用说明.txt" "${STAGE}/"
