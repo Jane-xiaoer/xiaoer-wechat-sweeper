@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>小耳微信清扫器 · 正在更新</title>
+<link rel="icon" type="image/png" href="/assets/app-icon.png">
+<link rel="stylesheet" href="/watercolor-ui.css">
+<style>
+  .updating { max-width: 520px; margin: 18vh auto; text-align: center; }
+  .updating h1 { font-size: 22px; font-weight: 600; margin-bottom: 10px; }
+  .updating p { opacity: .72; font-size: 14px; line-height: 1.7; }
+  .bar { height: 6px; border-radius: 3px; background: rgba(47,107,79,.14);
+         margin: 24px auto 12px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0;
+           background: #2F6B4F; transition: width .3s ease; }
+</style>
+</head>
+<body>
+<main class="updating">
+  <img class="watercolor-mascot" src="/assets/watercolor-mascot.png" alt="" aria-hidden="true">
+  <h1 id="title">正在更新到 v<span id="ver">…</span></h1>
+  <div class="bar"><i id="bar"></i></div>
+  <p id="hint">正在下载，稍等一下就好</p>
+</main>
+<script>
+const HINTS = {
+  downloading: "正在下载，稍等一下就好",
+  verifying: "正在验证签名与公证",
+  done: "更新好了，正在重开",
+  failed: "这次没更新成，先用现在这版",
+};
+async function poll() {
+  try {
+    const s = await (await fetch("/api/update/status")).json();
+    document.getElementById("ver").textContent = s.version || "";
+    document.getElementById("bar").style.width = (s.percent || 0) + "%";
+    document.getElementById("hint").textContent = HINTS[s.state] || "";
+    if (s.state === "done" || s.state === "failed") {
+      document.getElementById("title").textContent =
+        s.state === "done" ? "更新好了" : "继续用现在这版";
+      setTimeout(() => location.href = "/api/update/restart", 900);
+      return;
+    }
+  } catch (e) { /* 面板可能正在重开，忽略 */ }
+  setTimeout(poll, 400);
+}
+poll();
+</script>
+</body>
+</html>
