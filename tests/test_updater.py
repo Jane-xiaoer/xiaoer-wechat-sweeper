@@ -233,5 +233,84 @@ class TestExtractUtf8(unittest.TestCase):
         self.assertFalse((d / "跑出去了.txt").exists())
 
 
+class TestSwapIn(unittest.TestCase):
+    """换包这一步的铁律：任何时刻断电，磁盘上都要留着一份完整能跑的 app。
+
+    旧写法是「先把 app 挪成 .old，再花几秒 ditto 新的进来」，
+    那几秒里磁盘上根本没有 app——用户看到图标没了，就再也没有
+    「下次启动」来触发回滚了，兜底永远等不到机会。
+    """
+
+    def _fake_app(self, parent, version):
+        app = parent / "小耳微信清扫器.app"
+        inner = app / "Contents/Resources/app"
+        inner.mkdir(parents=True)
+        (inner / "VERSION").write_text(version)
+        return app
+
+    def _version_of(self, app):
+        return (app / "Contents/Resources/app/VERSION").read_text().strip()
+
+    def test_换包成功后是新版且不留残留(self):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(d))
+        app = self._fake_app(d, "2.4.0")
+        staged = self._fake_app(d / "stage", "2.5.0")
+
+        self.assertTrue(updater._swap_in(app, staged))
+        self.assertEqual(self._version_of(app), "2.5.0")
+        self.assertFalse(Path(str(app) + ".old").exists())
+        self.assertFalse(Path(str(app) + ".new").exists())
+
+    def test_复制失败时旧_app_毫发无损(self):
+        """新设计的核心价值：慢操作失败了，用户的 app 根本没被碰过"""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(d))
+        app = self._fake_app(d, "2.4.0")
+
+        missing = d / "根本不存在.app"
+        self.assertFalse(updater._swap_in(app, missing))
+        self.assertTrue(app.exists(), "复制都没成功，旧 app 不该被动过")
+        self.assertEqual(self._version_of(app), "2.4.0")
+        self.assertFalse(Path(str(app) + ".new").exists())
+
+    def test_崩在两次_rename_之间也能救回来(self):
+        """模拟：app 已挪成 .old，新的还没就位就断电了"""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(d))
+        app = self._fake_app(d, "2.4.0")
+        staged = self._fake_app(d / "stage", "2.5.0")
+
+        import subprocess
+        subprocess.run(["ditto", str(staged), str(app) + ".new"], check=True)
+        app.rename(Path(str(app) + ".old"))       # 断电就断在这儿
+        self.assertFalse(app.exists())
+
+        original = updater.app_bundle_path
+        updater.app_bundle_path = lambda: app
+        self.addCleanup(lambda: setattr(updater, "app_bundle_path", original))
+
+        self.assertTrue(updater.rollback_if_needed())
+        self.assertTrue(app.exists(), "断电后必须能把 app 救回来")
+        self.assertEqual(self._version_of(app), "2.4.0", "救回来的应该是已知能跑的旧版")
+        self.assertFalse(Path(str(app) + ".new").exists())
+
+    def test_主体还在时清掉残留(self):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(d))
+        app = self._fake_app(d, "2.4.0")
+        Path(str(app) + ".old").mkdir()
+        Path(str(app) + ".new").mkdir()
+
+        original = updater.app_bundle_path
+        updater.app_bundle_path = lambda: app
+        self.addCleanup(lambda: setattr(updater, "app_bundle_path", original))
+
+        self.assertFalse(updater.rollback_if_needed())
+        self.assertTrue(app.exists())
+        self.assertFalse(Path(str(app) + ".old").exists())
+        self.assertFalse(Path(str(app) + ".new").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

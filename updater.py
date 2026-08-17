@@ -194,19 +194,67 @@ def _old_path(app_path):
     return Path(str(app_path) + ".old")
 
 
+def _new_path(app_path):
+    return Path(str(app_path) + ".new")
+
+
+def _swap_in(app, staged_app):
+    """把新 app 换到 app 的位置。
+
+    顺序是刻意的：慢操作（复制 8MB）必须在旧 app 还完好无损的时候做完，
+    真正的切换只由两次 rename 组成——同一个盘上 rename 是原子的，
+    危险窗口从「几秒」缩到「微秒」。
+
+    上一版是反过来的：先把 app 挪成 .old，再花几秒 ditto 新的进来。
+    那几秒里磁盘上根本没有 app，进程一死用户的图标就没了；而回滚要等
+    「下次启动」才触发——图标都没了，用户根本没法启动它，兜底永远等不到机会。
+    """
+    new = _new_path(app)
+    old = _old_path(app)
+    shutil.rmtree(str(new), ignore_errors=True)
+    shutil.rmtree(str(old), ignore_errors=True)
+
+    rc, _ = _run(["ditto", str(staged_app), str(new)])
+    if rc != 0 or not new.exists():
+        shutil.rmtree(str(new), ignore_errors=True)
+        return False        # 到这里旧 app 一个字节都没被碰过
+
+    app.rename(old)                     # ← 原子
+    try:
+        new.rename(app)                 # ← 原子
+    except OSError:
+        old.rename(app)                 # 万一，立刻还原
+        shutil.rmtree(str(new), ignore_errors=True)
+        return False
+    shutil.rmtree(str(old), ignore_errors=True)
+    return True
+
+
 def rollback_if_needed():
-    """上次替换半途崩了的话，靠 .old 救回来。启动时调一次。"""
+    """上次换包半途崩了的话救回来。启动时调一次。
+
+    主体没了就用 .old 还原——救回的是那份已知能跑的旧版，
+    而不是没验完的 .new，跟「宁可不更新，不可打不开」一个道理。
+    """
     app = app_bundle_path()
     if not app:
         return False
-    old = _old_path(app)
-    if not old.exists():
-        return False
-    if not app.exists():
+    old, new = _old_path(app), _new_path(app)
+
+    if not app.exists() and old.exists():
         old.rename(app)
+        shutil.rmtree(str(new), ignore_errors=True)
         return True
-    shutil.rmtree(str(old), ignore_errors=True)   # 主体还在，残留直接清掉
-    return False
+
+    if not app.exists() and new.exists():
+        new.rename(app)                 # 只剩它了，总比没有强
+        return True
+
+    rescued = False
+    for leftover in (old, new):         # 主体还在，残留直接清掉
+        if leftover.exists():
+            shutil.rmtree(str(leftover), ignore_errors=True)
+    return rescued
 
 
 def _extract_utf8(zip_path, dest):
@@ -324,15 +372,7 @@ def _install_mac(info, on_state=None):
         if not ok:
             return False
 
-        old = _old_path(app)
-        shutil.rmtree(str(old), ignore_errors=True)
-        app.rename(old)                       # 先挪开，崩了还能靠它救回
-        rc, _ = _run(["ditto", str(new_apps[0]), str(app)])
-        if rc != 0:
-            old.rename(app)                   # 就位失败，立刻回滚
-            return False
-        shutil.rmtree(str(old), ignore_errors=True)
-        return True
+        return _swap_in(app, new_apps[0])
     except Exception:
         return False
     finally:
