@@ -26,8 +26,11 @@ iconutil -c icns "$TMP/AppIcon.iconset" -o "$TMP/applet.icns"
 
 osacompile -o "$APP" "$ROOT/macos/main.applescript"
 mkdir -p "$APP/Contents/Resources/app"
+# VERSION 必须进 bundle：current_version() 读的就是它，
+# 漏了会退化成 0.0.0，导致每次打开都判定有新版、反复更新
 cp "$ROOT/panel.html" "$ROOT/panel.py" "$ROOT/watercolor-ui.css" \
    "$ROOT/wechat_cleaner.py" "$ROOT/dedup.py" \
+   "$ROOT/updater.py" "$ROOT/updating.html" "$ROOT/VERSION" \
    "$APP/Contents/Resources/app/"
 mkdir -p "$APP/Contents/Resources/app/assets"
 cp "$ROOT/assets/"*.png "$APP/Contents/Resources/app/assets/"
