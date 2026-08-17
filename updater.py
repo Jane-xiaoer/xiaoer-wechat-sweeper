@@ -3,6 +3,7 @@
 打开时查一次 GitHub，有新版就装好再进面板。装不成就当无事发生，
 照常用旧版——这是个会搬用户文件的工具，宁可不更新，不可打不开。
 """
+import hashlib
 import json
 import os
 import sys
@@ -86,3 +87,45 @@ def check(timeout=3):
         }
     except Exception:
         return None
+
+
+def sha256_of(path):
+    """分块读，8MB 的包也不占内存"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def parse_team_id(text):
+    """从 codesign -dv 的输出里抠 TeamIdentifier。
+
+    这是整条验签链里最容易漏、也最要命的一环：签名有效只证明
+    「某个 Apple 开发者签了它」，不证明是我们。中间人拿自己的
+    Developer ID 签一个公证过的包进来，签名校验和 spctl 都会放行。
+
+    ad-hoc 签名（codesign -s -）这一行是 'not set'，一并当作不合法。
+    """
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if line.startswith("TeamIdentifier="):
+            tid = line.split("=", 1)[1].strip()
+            return None if tid in ("", "not set") else tid
+    return None
+
+
+def app_bundle_path():
+    """当前 python 跑在哪个 .app 里。
+
+    panel.py / updater.py 住在 X.app/Contents/Resources/app/，往上三级就是 .app。
+    直接跑仓库源码时匹配不上，返回 None——顺带保证开发时永远不会
+    触发自我更新，把工作目录搞坏。
+    """
+    if is_win():
+        return None
+    if len(HERE.parents) >= 3:
+        p = HERE.parents[2]
+        if p.suffix == ".app":
+            return p
+    return None

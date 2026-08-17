@@ -1,5 +1,7 @@
 """updater 纯函数单测。跑法：python3 -m unittest discover -s tests -v"""
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -103,6 +105,36 @@ class TestCheck(unittest.TestCase):
     def test_有新版但没有本平台资产返回_None(self):
         self._fake_api({"tag_name": "v99.0.0", "body": "", "assets": []})
         self.assertIsNone(updater.check())
+
+
+class TestSha256(unittest.TestCase):
+    def test_算得对(self):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"hello")
+            p = f.name
+        self.addCleanup(lambda: os.unlink(p))
+        # echo -n hello | shasum -a 256
+        self.assertEqual(
+            updater.sha256_of(p),
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+
+
+class TestParseTeamId(unittest.TestCase):
+    def test_正常签名(self):
+        out = ("Identifier=xyz.xiaoerai.wechat-cleaner\n"
+               "Authority=Developer ID Application: Juan Li (3DP32PZ62M)\n"
+               "TeamIdentifier=3DP32PZ62M\n")
+        self.assertEqual(updater.parse_team_id(out), "3DP32PZ62M")
+
+    def test_adhoc_签名没有_TeamID(self):
+        """codesign -s - 签的包，TeamIdentifier=not set，必须当作不合法"""
+        self.assertIsNone(updater.parse_team_id("TeamIdentifier=not set\n"))
+
+    def test_完全没这一行(self):
+        self.assertIsNone(updater.parse_team_id("Identifier=com.foo\n"))
+
+    def test_空输入(self):
+        self.assertIsNone(updater.parse_team_id(""))
 
 
 if __name__ == "__main__":
