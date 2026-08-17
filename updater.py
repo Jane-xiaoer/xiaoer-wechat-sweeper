@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -209,7 +210,64 @@ def rollback_if_needed():
 
 
 def install(info, on_state=None):
-    """下载 → 验证 → 替换。任何一步不对就中止，一个字节都不写进 /Applications。"""
+    """下载 → 验证 → 替换。任何一步不对就中止。"""
+    if is_win():
+        return _install_win(info, on_state)
+    return _install_mac(info, on_state)
+
+
+def _install_win(info, on_state=None):
+    """Windows 没有签名，链短一半：下载 → 验 sha256 → 解压 → 覆盖目录。
+
+    正在跑的 .py 可以被覆盖（Python 已经读进内存了），不像 exe 会被锁。
+    程序目录不可写（比如装在 Program Files）就静默跳过——
+    一个清扫工具不该要管理员权限。
+    """
+    dest = HERE
+    if not os.access(str(dest), os.W_OK):
+        return False
+
+    work = Path(tempfile.mkdtemp(prefix="xiaoer-update-"))
+    try:
+        zip_path = work / "update.zip"
+        if not _download(info["url"], zip_path, on_state):
+            return False
+
+        if on_state:
+            on_state("verifying", 0)
+        if info.get("sha256") and sha256_of(zip_path) != info["sha256"]:
+            return False
+
+        stage = work / "stage"
+        with zipfile.ZipFile(str(zip_path)) as z:
+            z.extractall(str(stage))
+
+        # zip 里可能多包一层同名目录，取真正含 panel.py 的那层
+        root = stage
+        if not (root / "panel.py").exists():
+            subs = [d for d in stage.iterdir() if d.is_dir()]
+            if len(subs) != 1 or not (subs[0] / "panel.py").exists():
+                return False
+            root = subs[0]
+
+        for item in root.iterdir():
+            target = dest / item.name
+            if item.is_dir():
+                if target.exists():
+                    shutil.rmtree(str(target), ignore_errors=True)
+                shutil.copytree(str(item), str(target))
+            else:
+                shutil.copy2(str(item), str(target))
+        return True
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(str(work), ignore_errors=True)
+
+
+def _install_mac(info, on_state=None):
+    """整包替换 .app。app 是签名公证过的，改里面任何一个文件都会让
+    签名失效、被系统判定成损坏，所以只能换整个 app。"""
     app = app_bundle_path()
     if not app or not os.access(str(app.parent), os.W_OK):
         return False        # 跑源码，或装在没写权限的地方——静默跳过

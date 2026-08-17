@@ -137,5 +137,47 @@ class TestParseTeamId(unittest.TestCase):
         self.assertIsNone(updater.parse_team_id(""))
 
 
+def _rm_readonly(p):
+    import shutil as _sh
+    os.chmod(str(p), 0o700)
+    _sh.rmtree(str(p), ignore_errors=True)
+
+
+class TestWinInstallGuard(unittest.TestCase):
+    """Windows 分支在 mac 上没法端到端测，但守卫逻辑要能测。
+
+    直接测 _install_win 而不是 install()：后者在 mac 上会先因为
+    app_bundle_path() 返回 None 而失败，测不到写权限这条守卫。
+    """
+
+    def test_目录不可写时返回_False(self):
+        ro = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(ro))
+        os.chmod(str(ro), 0o500)          # 只读
+
+        original_here = updater.HERE
+        updater.HERE = ro
+        self.addCleanup(lambda: setattr(updater, "HERE", original_here))
+
+        self.assertFalse(
+            updater._install_win({"url": "x", "sha256": "", "size": 0}))
+
+    def test_下载失败时返回_False(self):
+        """可写目录 + 下载不通 → 依然安全返回 False，不抛"""
+        rw = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(rw))
+
+        original_here = updater.HERE
+        updater.HERE = rw
+        self.addCleanup(lambda: setattr(updater, "HERE", original_here))
+
+        original_dl = updater._download
+        updater._download = lambda url, dest, on_state=None: False
+        self.addCleanup(lambda: setattr(updater, "_download", original_dl))
+
+        self.assertFalse(
+            updater._install_win({"url": "x", "sha256": "", "size": 0}))
+
+
 if __name__ == "__main__":
     unittest.main()
