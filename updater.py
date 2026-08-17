@@ -209,6 +209,35 @@ def rollback_if_needed():
     return False
 
 
+def _extract_utf8(zip_path, dest):
+    """解压，并修好中文文件名。
+
+    zip 格式用一个标志位（0x800）声明「文件名是 UTF-8」。Info-ZIP 的
+    zip 命令存中文名时不设这一位，Python 的 zipfile 只好按 cp437 解码，
+    「小耳微信清扫器.bat」会变成一串乱码——入口文件没了，更新完等于把
+    工具搞死。我们自己的包已经用 Python 打（会自动设这一位），
+    这里再兜一层：没设标志位的名字，把 cp437 解回字节再按 UTF-8 读。
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(str(zip_path)) as z:
+        for item in z.infolist():
+            name = item.filename
+            if not (item.flag_bits & 0x800):
+                try:
+                    name = name.encode("cp437").decode("utf-8")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    pass          # 本来就是 ASCII，或者真的是别的编码，原样用
+            target = dest / name
+            if not str(target.resolve()).startswith(str(dest.resolve())):
+                continue          # 防 zip 里藏 ../../ 跳出解压目录
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with z.open(item) as src, open(target, "wb") as out:
+                shutil.copyfileobj(src, out)
+
+
 def install(info, on_state=None):
     """下载 → 验证 → 替换。任何一步不对就中止。"""
     if is_win():
@@ -239,8 +268,7 @@ def _install_win(info, on_state=None):
             return False
 
         stage = work / "stage"
-        with zipfile.ZipFile(str(zip_path)) as z:
-            z.extractall(str(stage))
+        _extract_utf8(zip_path, stage)
 
         # zip 里可能多包一层同名目录，取真正含 panel.py 的那层
         root = stage

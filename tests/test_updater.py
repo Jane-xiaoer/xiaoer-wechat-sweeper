@@ -143,6 +143,11 @@ def _rm_readonly(p):
     _sh.rmtree(str(p), ignore_errors=True)
 
 
+def shutil_which(name):
+    import shutil as _sh
+    return _sh.which(name)
+
+
 class TestWinInstallGuard(unittest.TestCase):
     """Windows 分支在 mac 上没法端到端测，但守卫逻辑要能测。
 
@@ -177,6 +182,55 @@ class TestWinInstallGuard(unittest.TestCase):
 
         self.assertFalse(
             updater._install_win({"url": "x", "sha256": "", "size": 0}))
+
+
+class TestExtractUtf8(unittest.TestCase):
+    """入口文件叫「小耳微信清扫器.bat」，名字坏掉 = 用户双击不着 = 工具死了"""
+
+    def test_正常包解出正确中文名(self):
+        """Python 打的包会自动带 0x800 标志，这是我们自己发版走的路"""
+        import zipfile as zf
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(d))
+        with zf.ZipFile(str(d / "a.zip"), "w") as z:
+            z.writestr("小耳微信清扫器/小耳微信清扫器.bat", "@echo off")
+        updater._extract_utf8(d / "a.zip", d / "out")
+        self.assertTrue((d / "out/小耳微信清扫器/小耳微信清扫器.bat").exists())
+
+    def test_没带标志位的包也能解出正确中文名(self):
+        """zip 命令打的包没有 0x800 标志——v2.3.0 就是这么打的。
+        不兜住的话，自动更新完入口 bat 会变成乱码名，用户双击不着。
+
+        用真的 zip 命令造素材：Python 的 zipfile 写非 ASCII 名时
+        会自动补上标志位，造不出这种包。
+        """
+        import subprocess
+        if not shutil_which("zip"):
+            self.skipTest("没有 zip 命令")
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(d))
+        (d / "小耳微信清扫器").mkdir()
+        (d / "小耳微信清扫器/小耳微信清扫器.bat").write_text("@echo off")
+        subprocess.run(["zip", "-qr", str(d / "b.zip"), "小耳微信清扫器"],
+                       cwd=str(d), check=True)
+
+        import zipfile as zf
+        with zf.ZipFile(str(d / "b.zip")) as z:
+            flagged = [i for i in z.infolist() if i.flag_bits & 0x800]
+        self.assertEqual(flagged, [], "素材没造对：zip 命令这次带上标志位了")
+
+        updater._extract_utf8(d / "b.zip", d / "out")
+        self.assertTrue((d / "out/小耳微信清扫器/小耳微信清扫器.bat").exists(),
+                        "入口 bat 名字坏了，用户就双击不着了")
+
+    def test_不让_zip_跳出解压目录(self):
+        import zipfile as zf
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: _rm_readonly(d))
+        with zf.ZipFile(str(d / "evil.zip"), "w") as z:
+            z.writestr("../跑出去了.txt", "x")
+        updater._extract_utf8(d / "evil.zip", d / "out")
+        self.assertFalse((d / "跑出去了.txt").exists())
 
 
 if __name__ == "__main__":
